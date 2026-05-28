@@ -1,0 +1,26 @@
+{
+  "name": "@Roleplay/UI",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "vue-tsc -p tsconfig.json --noEmit && vite build",
+    "dev": "vite",
+    "typecheck": "vue-tsc -p tsconfig.json --noEmit"
+  },
+  "dependencies": {
+    "@fontsource/inter": "^5.2.8",
+    "@primeuix/themes": "^1.0.0",
+    "@Roleplay/Shared": "*",
+    "@tabler/icons-vue": "^3.24.0",
+    "pinia": "^2.3.0",
+    "primevue": "^4.2.5",
+    "vue": "^3.5.13",
+    "vue-router": "^4.5.0"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-vue": "^5.2.1",
+    "vite": "^5.4.11",
+    "vue-tsc": "^2.1.10"
+  }
+}

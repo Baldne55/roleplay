@@ -1,0 +1,30 @@
+{
+  "name": "@Roleplay/Backend",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "node esbuild.config.mjs",
+    "build:watch": "node esbuild.config.mjs --watch",
+    "typecheck": "tsc --noEmit",
+    "migrate:up": "node --import tsx Src/Data/Migrations/Runner.ts up",
+    "migrate:down": "node --import tsx Src/Data/Migrations/Runner.ts down",
+    "migrate:status": "node --import tsx Src/Data/Migrations/Runner.ts status",
+    "migrate:generate": "node --import tsx Src/Data/Migrations/Runner.ts generate"
+  },
+  "dependencies": {
+    "@Roleplay/Shared": "*",
+    "@citizenfx/server": "^2.0.29753-1",
+    "mysql2": "^3.11.5",
+    "sequelize": "^6.37.5",
+    "sequelize-typescript": "^2.1.6",
+    "umzug": "^3.8.2",
+    "zod": "^3.24.1"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.2",
+    "@types/validator": "^13.12.2",
+    "esbuild": "^0.24.0",
+    "tsx": "^4.19.2"
+  }
+}

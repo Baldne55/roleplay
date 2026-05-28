@@ -1,0 +1,26 @@
+# Dependencies
+node_modules/
+**/node_modules/
+
+# Build outputs
+Production/Windows/resources/[local]/roleplay/Dist/
+Production/Linux/resources/[local]/roleplay/Dist/
+**/dist/
+**/build/
+
+# FXServer runtime binaries (Production tree is per-machine)
+Production/
+
+# Secrets / per-machine config
+server.cfg
+
+# IDE / tooling
+.vscode/
+.claude/
+
+# OS cruft
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log

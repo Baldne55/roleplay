@@ -1,0 +1,86 @@
+# ─── Roleplay FXServer config (template) ───────────────────────────────────────
+# Copy this file to `server.cfg` and replace the REPLACE_WITH_* placeholders.
+
+# ─── Network ───────────────────────────────────────────────────────────────────
+endpoint_add_tcp "0.0.0.0:30120"
+endpoint_add_udp "0.0.0.0:30120"
+
+# ─── Game build / client trust ─────────────────────────────────────────────────
+# We do not trust the FiveM client (see CLAUDE.md / trust-boundary rule).
+# These settings are the server-side hardening that does not require code.
+sv_enforceGameBuild 3751
+sv_scriptHookAllowed 0
+
+# ─── OneSync (free 48-slot tier with Infinity behaviour) ───────────────────────
+# Modern unified flag — replaces the legacy `onesync_enableInfinity 1` convar.
+# `onesync on` enables OneSync Infinity automatically on current builds.
+set onesync on
+set onesync_population true
+sv_maxclients 48
+
+# ─── Voice chat: DISABLED (text-roleplay only) ─────────────────────────────────
+# Voice activates only when a voice resource (pma-voice, mumble-voip, vMenu
+# voice) is ensured — we deliberately do not ensure any. Convars below lock
+# the disabled state on the client for belt-and-suspenders.
+setr voice_useNativeAudio false
+setr voice_useSendingRangeOnly true
+
+# ─── Server identity ───────────────────────────────────────────────────────────
+sv_hostname "Roleplay"
+sets sv_projectName "Roleplay"
+sets sv_projectDesc "Text-roleplay server"
+sets locale "en-US"
+sets tags "roleplay, text-rp, english"
+
+# ─── Server listing: DISABLED for dev ──────────────────────────────────────────
+# Empty sv_master1 stops FXServer from registering with the public listing,
+# which also stops the noisy NAT-loopback `dynamic.json` / `players.json`
+# polls from filling the console. Restore to default (drop these lines) when
+# we are ready to be discoverable.
+sv_master1 ""
+
+# ─── Database (sequelize-typescript / mysql2) ──────────────────────────────────
+set db_host "127.0.0.1"
+set db_port "3306"
+set db_user "root"
+set db_password "REPLACE_WITH_DB_PASSWORD"
+set db_name "roleplay"
+
+# ─── FiveM license key (https://keymaster.fivem.net) ───────────────────────────
+sv_licenseKey "REPLACE_WITH_KEY_FROM_KEYMASTER"
+
+# ─── Discord identity gate (bot token + guild membership) ─────────────────────
+# Auth runs entirely through the Discord IPC identifier (the FiveM client
+# reads the local Discord user ID from the desktop Discord app) - no OAuth
+# browser dance. The bot token lets us call /users/{id} for the profile
+# and /guilds/{guild_id}/members/{user_id} for guild membership.
+#
+# Setup (one-time):
+#   1. https://discord.com/developers/applications -> your app -> Bot
+#      -> Reset Token -> copy into discord_bot_token.
+#   2. OAuth2 -> URL Generator -> tick the bot scope (no permissions). Open
+#      the generated URL and add the bot to your guild.
+#   3. In Discord, copy your guild ID (Developer Mode -> right-click
+#      guild -> Copy ID) into discord_guild_id.
+#   4. Set discord_guild_invite to a permanent invite URL shown to users
+#      who try to join without being in the guild.
+set discord_bot_token "REPLACE_WITH_BOT_TOKEN"
+set discord_guild_id "REPLACE_WITH_GUILD_ID"
+set discord_guild_invite "https://discord.gg/REPLACE_WITH_INVITE_CODE"
+
+# ─── User Control Panel ────────────────────────────────────────────────────────
+# Surfaced in the kick reason for Pending accounts so players know where to
+# take the roleplay quiz that flips them to Active. New accounts always land
+# Pending - the UCP is the only path out.
+set ucp_url "https://REPLACE_WITH_UCP_HOST"
+
+# ─── txAdmin / monitor: deliberately NOT ensured ──────────────────────────────
+# The `monitor` resource (txAdmin web panel) ships with the FXServer artifact at
+# citizen/system_resources/monitor/. It only auto-starts when FXServer.exe is
+# launched WITHOUT a `+exec` arg. Our Launch.cmd uses `+exec server.cfg`, which
+# puts FXServer in standalone mode → txAdmin is skipped without needing to
+# delete its files. Do NOT add `ensure monitor` unless you actually want the
+# web panel.
+#
+# ─── Resources ─────────────────────────────────────────────────────────────────
+ensure roleplay

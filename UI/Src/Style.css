@@ -1,0 +1,78 @@
+/*
+ * Global resets + a handful of project-wide CSS variables.
+ *
+ * Everything visual is owned by PrimeVue's Aura preset (component
+ * styling + design tokens). This file:
+ *   - normalises the document body so the CEF compositor keeps an
+ *     alpha-transparent canvas (the game framebuffer shows through),
+ *   - scales the root font-size with viewport width so the SPA looks
+ *     proportional across 720p..4K,
+ *   - mounts the Inter font as the default,
+ *   - leaves a `.Hidden-Root` helper for the default invisible route.
+ */
+
+html {
+  /*
+   * Root font scales with vmin (smaller of viewport width/height) so
+   * ultrawide aspect ratios don't over-scale - the UI follows the
+   * shorter axis, leaving horizontal background untouched. Tuned so:
+   *   720p   -> 13px floor
+   *   1080p  -> ~15px
+   *   1440p  -> ~18px
+   *   4K     -> ~23px
+   *   8K+    -> 26px ceiling
+   */
+  font-size: clamp(13px, calc(0.75vmin + 7px), 26px);
+  /*
+   * Force the UA color-scheme to neutral so CEF's compositor keeps an
+   * alpha-transparent canvas. Without this, certain dark-mode triggers
+   * cause Chromium to switch the Canvas root background to a dark
+   * default; CEF then composites that over the game framebuffer
+   * instead of alpha-blending, and the scene disappears behind a solid
+   * backdrop.
+   */
+  color-scheme: normal;
+}
+
+html,
+body,
+#App {
+  height: 100%;
+  width: 100%;
+  margin: 0;
+  padding: 0;
+  background-color: transparent !important;
+}
+
+body {
+  font-family:
+    'Inter',
+    -apple-system,
+    BlinkMacSystemFont,
+    'Segoe UI',
+    Roboto,
+    Helvetica,
+    Arial,
+    sans-serif;
+  font-feature-settings: 'cv11', 'ss01', 'ss03';
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  color: var(--p-text-color);
+}
+
+.Hidden-Root {
+  visibility: hidden;
+  pointer-events: none;
+}
+
+/* Hide scrollbars across the SPA while keeping scroll behaviour intact. */
+* {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+
+*::-webkit-scrollbar {
+  width: 0;
+  height: 0;
+  display: none;
+}

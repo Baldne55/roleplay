@@ -1,0 +1,14 @@
+{
+  "extends": "../tsconfig.base.json",
+  "compilerOptions": {
+    "lib": ["ES2022", "DOM"],
+    "types": ["@citizenfx/client"],
+    "outDir": "./Build",
+    "noEmit": true,
+    "paths": {
+      "@/*": ["./Src/*"],
+      "@Shared/*": ["../Shared/*"]
+    }
+  },
+  "include": ["./Src/**/*.ts", "./esbuild.config.mjs"]
+}
