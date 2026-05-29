@@ -9,6 +9,7 @@ import {
   Unique,
 } from 'sequelize-typescript';
 import type { CreationOptional, InferAttributes, InferCreationAttributes } from 'sequelize';
+import type { AccountSettings } from '@Shared/Constants/AccountSettings.js';
 
 export type AccountStatus = 'Pending' | 'Active' | 'Banned';
 export type StaffLevel = 'None' | 'Helper' | 'Moderator' | 'Administrator' | 'Founder';
@@ -120,6 +121,15 @@ export class Account extends Model<InferAttributes<Account>, InferCreationAttrib
   @Default(false)
   @Column({ type: DataType.BOOLEAN, field: 'is_deleted', allowNull: false })
   declare IsDeleted: CreationOptional<boolean>;
+
+  /**
+   * Free-form per-account preferences (theme, chat font, etc.). NULL on
+   * fresh accounts; the resolver in Shared/Constants/AccountSettings
+   * lazy-merges against DefaultAccountSettings so unset keys inherit the
+   * canonical default until the user explicitly opts out.
+   */
+  @Column({ type: DataType.JSON, field: 'settings', allowNull: true })
+  declare Settings: CreationOptional<AccountSettings | null>;
 
   @Column({ type: DataType.DATE, field: 'created_at', allowNull: false })
   declare CreatedAt: CreationOptional<Date>;

@@ -6,8 +6,9 @@
  *   - Subtle dark overlay so the logo reads cleanly regardless of how
  *     bright the artwork is in the centre.
  *   - Logo centered on top.
- *   - No spinner; FiveM renders its own "Loading game (NN%)" indicator
- *     in the bottom-right.
+ *   - Custom progress bar pinned to the bottom centre. The default
+ *     FXServer bottom-right percentage is suppressed by Script.js taking
+ *     ownership of the loadProgress event stream.
  */
 
 * {
@@ -52,4 +53,58 @@ body {
   user-select: none;
   -webkit-user-drag: none;
   filter: drop-shadow(0 4px 20px rgba(0, 0, 0, 0.5));
+}
+
+/* ─── Bottom-centre progress ──────────────────────────────────────── */
+
+.Progress {
+  position: absolute;
+  left: 50%;
+  bottom: 3.5vh;
+  transform: translateX(-50%);
+  width: min(40rem, 60vw);
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  user-select: none;
+}
+
+.ProgressBar {
+  position: relative;
+  width: 100%;
+  height: 0.4rem;
+  border-radius: 9999px;
+  background: rgba(255, 255, 255, 0.12);
+  overflow: hidden;
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.06);
+}
+
+.ProgressFill {
+  position: absolute;
+  inset: 0;
+  width: 0%;
+  background: linear-gradient(90deg, #10b981 0%, #34d399 100%);
+  box-shadow: 0 0 12px rgba(16, 185, 129, 0.45);
+  transition: width 200ms ease-out;
+}
+
+.ProgressMeta {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  font-size: 0.8125rem;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: rgba(245, 245, 245, 0.85);
+  text-shadow: 0 1px 3px rgba(0, 0, 0, 0.6);
+}
+
+.ProgressLabel {
+  font-weight: 500;
+}
+
+.ProgressPercent {
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
+  color: #10b981;
 }

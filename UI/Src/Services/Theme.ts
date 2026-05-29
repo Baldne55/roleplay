@@ -1,6 +1,7 @@
 /**
- * Theme service. Owns the `.dark` class on `<html>` and persists the
- * user's choice across reconnects via localStorage.
+ * Pure DOM helpers for the SPA's light/dark theme. State lives in the
+ * Settings store (UI/Src/Stores/Settings.ts) and is persisted server-
+ * side on `accounts.settings` JSON; this module just paints the result.
  *
  * Three modes:
  *   - Light:  always light, ignores OS preference
@@ -12,34 +13,7 @@
  * but the matchMedia query still resolves to the system value when
  * available - System falls back to Light otherwise.
  */
-
-export type ThemeMode = 'Light' | 'Dark' | 'System';
-
-export const ThemeModes: readonly ThemeMode[] = ['Light', 'Dark', 'System'];
-
-const StorageKey = 'Roleplay.Theme.Mode';
-
-/**
- * Returns the saved mode (or 'System' on first run / unparsable value).
- * Safe to call before the SPA mounts.
- */
-export function LoadSavedMode(): ThemeMode {
-  try {
-    const Raw = localStorage.getItem(StorageKey);
-    if (Raw === 'Light' || Raw === 'Dark' || Raw === 'System') return Raw;
-  } catch {
-    // localStorage can throw in CEF when the scheme is unsupported.
-  }
-  return 'System';
-}
-
-export function SaveMode(Mode: ThemeMode): void {
-  try {
-    localStorage.setItem(StorageKey, Mode);
-  } catch {
-    // ignore - choice still applies for the current session
-  }
-}
+import type { ThemeMode } from '@Shared/Constants/AccountSettings';
 
 /** True if the OS / CEF reports a dark colour-scheme preference. */
 export function SystemPrefersDark(): boolean {
@@ -63,15 +37,37 @@ export function ApplyTheme(Mode: ThemeMode): void {
   document.documentElement.classList.toggle('dark', IsDark);
 }
 
+/**
+ * First-paint cache key. Mirrors UI/Src/Stores/Settings.ts so the
+ * pre-mount InitializeTheme() call (Main.ts) and the store init read
+ * the same source.
+ */
+const CacheKey = 'Roleplay.Settings';
+
+function ReadCachedMode(): ThemeMode {
+  try {
+    const Raw = localStorage.getItem(CacheKey);
+    if (Raw === null) return 'System';
+    const Parsed = JSON.parse(Raw) as { ThemeMode?: ThemeMode };
+    if (Parsed?.ThemeMode === 'Light' || Parsed?.ThemeMode === 'Dark' || Parsed?.ThemeMode === 'System') {
+      return Parsed.ThemeMode;
+    }
+  } catch {
+    // localStorage can throw in CEF when the scheme is unsupported.
+  }
+  return 'System';
+}
+
 let SystemMediaListenerInstalled = false;
 let CurrentMode: ThemeMode = 'System';
 
 /**
- * One-shot initializer. Loads the saved mode, applies it, and installs
- * a `prefers-color-scheme` listener so the System mode reacts live.
+ * One-shot initializer. Called from Main.ts BEFORE the SPA mounts so
+ * the first paint is already on the user's chosen theme. Installs a
+ * `prefers-color-scheme` listener so System mode reacts live.
  */
 export function InitializeTheme(): void {
-  CurrentMode = LoadSavedMode();
+  CurrentMode = ReadCachedMode();
   ApplyTheme(CurrentMode);
 
   if (SystemMediaListenerInstalled) return;
@@ -92,13 +88,10 @@ export function InitializeTheme(): void {
   }
 }
 
-/** Change the active mode (persists + re-applies). */
-export function SetMode(Mode: ThemeMode): void {
-  CurrentMode = Mode;
-  SaveMode(Mode);
-  ApplyTheme(Mode);
-}
-
-export function GetMode(): ThemeMode {
-  return CurrentMode;
+/**
+ * Called by the Settings store whenever the resolved ThemeMode changes
+ * so the matchMedia listener has the latest mode to gate against.
+ */
+export function SyncCurrentMode(Next: ThemeMode): void {
+  CurrentMode = Next;
 }

@@ -61,7 +61,7 @@ export class DiscordService {
       DisplayName: typeof Raw.global_name === 'string' && Raw.global_name.length > 0 ? Raw.global_name : Raw.username,
       AvatarHash: typeof Raw.avatar === 'string' ? Raw.avatar : null,
     };
-    this.Log.Info(`Fetched profile id=${Profile.ID} display="${Profile.DisplayName}"`);
+    this.Log.Debug(`Fetched profile id=${Profile.ID} display="${Profile.DisplayName}"`);
     return Profile;
   }
 

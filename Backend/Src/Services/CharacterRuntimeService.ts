@@ -58,7 +58,7 @@ export class CharacterRuntimeService {
     this.WriteStateBag(Source, 'Roleplay:IsMasked', Runtime.IsMasked);
     this.WriteStateBag(Source, 'Roleplay:InjuryStatus', Runtime.InjuryStatus);
     this.WriteStateBag(Source, 'Roleplay:BleedingStatus', Runtime.BleedingStatus);
-    this.Log.Info(`Attached source=${Source} character=${Runtime.CharacterID}`);
+    this.Log.Debug(`Attached source=${Source} character=${Runtime.CharacterID}`);
   }
 
   Get(Source: number): CharacterRuntime | null {
@@ -75,7 +75,7 @@ export class CharacterRuntimeService {
     const Runtime = this.Cache.get(Source) ?? null;
     if (Runtime !== null) {
       this.Cache.delete(Source);
-      this.Log.Info(`Detached source=${Source} character=${Runtime.CharacterID}`);
+      this.Log.Debug(`Detached source=${Source} character=${Runtime.CharacterID}`);
     }
     return Runtime;
   }

@@ -40,6 +40,6 @@ export class ConnectionController {
       Queue.Remove(source);
     });
 
-    this.Log.Info('Handlers registered (playerConnecting, playerJoining, playerDropped)');
+    this.Log.Debug('Handlers registered (playerConnecting, playerJoining, playerDropped)');
   }
 }

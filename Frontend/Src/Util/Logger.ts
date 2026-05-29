@@ -1,6 +1,12 @@
 /**
  * Frontend scoped logger. Same API as Backend/Util/Logger.ts but client-side
  * (FiveM's V8 has `console.log` that routes to the client F8 console).
+ *
+ * Threshold is sourced from the `log_level` convar (replicated via `setr`
+ * in server.cfg) on module init.
+ *
+ * Format:
+ *   29-05-2026 - 15:30:42 [INFO] [Bootstrap] message
  */
 
 type LogLevel = 'Debug' | 'Info' | 'Warn' | 'Error';
@@ -12,14 +18,39 @@ const LevelOrder: Record<LogLevel, number> = {
   Error: 3,
 };
 
-let MinLevel: LogLevel = 'Info';
+declare function GetConvar(VarName: string, Default: string): string;
+
+function ReadConvarLevel(): LogLevel {
+  try {
+    const Raw = GetConvar('log_level', 'info').toLowerCase();
+    if (Raw === 'debug') return 'Debug';
+    if (Raw === 'warn') return 'Warn';
+    if (Raw === 'error') return 'Error';
+    return 'Info';
+  } catch {
+    return 'Info';
+  }
+}
+
+let MinLevel: LogLevel = ReadConvarLevel();
 
 export function SetMinLogLevel(Level: LogLevel): void {
   MinLevel = Level;
 }
 
+function Pad2(N: number): string {
+  return N < 10 ? `0${N}` : String(N);
+}
+
+function FormatTimestamp(D: Date = new Date()): string {
+  return (
+    `${Pad2(D.getDate())}-${Pad2(D.getMonth() + 1)}-${D.getFullYear()} - ` +
+    `${Pad2(D.getHours())}:${Pad2(D.getMinutes())}:${Pad2(D.getSeconds())}`
+  );
+}
+
 function Format(Level: LogLevel, Scope: string, Message: string, Extra?: unknown): string {
-  const Base = `[${Level.toUpperCase()}] [${Scope}] ${Message}`;
+  const Base = `${FormatTimestamp()} [${Level.toUpperCase()}] [${Scope}] ${Message}`;
   if (Extra === undefined) return Base;
   try {
     return `${Base} ${JSON.stringify(Extra)}`;

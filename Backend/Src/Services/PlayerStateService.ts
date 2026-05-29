@@ -23,6 +23,13 @@ export interface PlayerState {
    * this to know which row to persist.
    */
   CharacterID: string | null;
+  /**
+   * Session-only admin-on-duty flag. Toggled via a future /aduty command.
+   * Required by the command dispatcher to gate staff-only commands so
+   * staff can play IC characters without their admin shortcuts firing
+   * (lc-rp parity). Never persisted - resets to false on every connect.
+   */
+  AdminDuty: boolean;
   ConnectedAt: number;
 }
 
@@ -43,10 +50,11 @@ export class PlayerStateService {
       Bucket,
       AccountID: null,
       CharacterID: null,
+      AdminDuty: false,
       ConnectedAt: Date.now(),
     };
     this.States.set(Source, State);
-    this.Log.Info(`State initialised - source=${Source} phase=PreAuth bucket=${Bucket}`);
+    this.Log.Debug(`State initialised - source=${Source} phase=PreAuth bucket=${Bucket}`);
     return State;
   }
 
@@ -58,28 +66,48 @@ export class PlayerStateService {
     const State = this.States.get(Source);
     if (State === undefined) return;
     State.Phase = Phase;
-    this.Log.Info(`Phase -> ${Phase} - source=${Source}`);
+    this.Log.Debug(`Phase -> ${Phase} - source=${Source}`);
   }
 
   SetAccountID(Source: number, AccountID: string): void {
     const State = this.States.get(Source);
     if (State === undefined) return;
     State.AccountID = AccountID;
-    this.Log.Info(`AccountID -> ${AccountID} - source=${Source}`);
+    this.Log.Debug(`AccountID -> ${AccountID} - source=${Source}`);
   }
 
   SetCharacterID(Source: number, CharacterID: string): void {
     const State = this.States.get(Source);
     if (State === undefined) return;
     State.CharacterID = CharacterID;
-    this.Log.Info(`CharacterID -> ${CharacterID} - source=${Source}`);
+    this.Log.Debug(`CharacterID -> ${CharacterID} - source=${Source}`);
+  }
+
+  /**
+   * Drop the active character link without tearing down the player-state
+   * entry. Used by mid-session transitions (e.g. /changecharacter, /logout)
+   * that put the player back into a pre-spawn phase while the connection
+   * itself stays open.
+   */
+  ClearCharacterID(Source: number): void {
+    const State = this.States.get(Source);
+    if (State === undefined) return;
+    State.CharacterID = null;
+    this.Log.Debug(`CharacterID cleared - source=${Source}`);
+  }
+
+  SetAdminDuty(Source: number, On: boolean): void {
+    const State = this.States.get(Source);
+    if (State === undefined) return;
+    State.AdminDuty = On;
+    this.Log.Debug(`AdminDuty -> ${On} - source=${Source}`);
   }
 
   Clear(Source: number): PlayerState | null {
     const State = this.States.get(Source) ?? null;
     if (State !== null) {
       this.States.delete(Source);
-      this.Log.Info(`State cleared - source=${Source}`);
+      this.Log.Debug(`State cleared - source=${Source}`);
     }
     return State;
   }

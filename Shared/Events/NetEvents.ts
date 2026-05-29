@@ -16,6 +16,8 @@ import type {
   Gender,
 } from '../Constants/Character.js';
 import type { OutfitData } from '../Constants/Outfit.js';
+import type { AccountSettings } from '../Constants/AccountSettings.js';
+import type { CommandHint } from '../Chat/Index.js';
 
 export const NetEvents = {
   /**
@@ -111,6 +113,62 @@ export const NetEvents = {
    * the ownership check.
    */
   CharacterSelectFailure: 'Roleplay:Net:Character:SelectFailure',
+
+  /**
+   * Server -> client. Render a chat line. Body is a token-formatted
+   * string of the shape `!{#RRGGBB}...!{#FFFFFF}`; the UI parses it
+   * into Segments and renders one <span> per coloured run.
+   */
+  ChatPush: 'Roleplay:Net:Chat:Push',
+
+  /**
+   * Client -> server. Player submitted a line in the chat overlay.
+   * Server validates phase / rate-limit / length, then dispatches to
+   * the command registry (slash-prefix) or rejects.
+   */
+  ChatSubmit: 'Roleplay:Net:Chat:Submit',
+
+  /**
+   * Server -> client. Wipe the local scrollback. Forward-compat surface
+   * for a future /clearchat; no command in this slice emits it.
+   */
+  ChatClear: 'Roleplay:Net:Chat:Clear',
+
+  /**
+   * Server -> client. Snapshot of every registered command, pushed once
+   * after spawn. Drives the autocomplete suggestion box.
+   */
+  ChatCommandList: 'Roleplay:Net:Chat:CommandList',
+
+  /**
+   * Server -> client. Spawned player is leaving the world back to the
+   * character selector (e.g. /changecharacter). Frontend tears down the
+   * spawned state, the SPA resets the list store and routes to
+   * /Character/Select, chat input goes read-only again.
+   */
+  SessionReturnToSelect: 'Roleplay:Net:Session:ReturnToSelect',
+
+  /**
+   * Server -> client. Spawned player is leaving the world back to the
+   * auth shell (e.g. /logout). Frontend restores the auth panorama, the
+   * SPA flips the Auth phase back to Prepared and routes to /Auth so the
+   * player can click Enter Server again. The connection itself stays open.
+   */
+  SessionReturnToAuth: 'Roleplay:Net:Session:ReturnToAuth',
+
+  /**
+   * Client -> server. SPA pushed a partial settings update (theme
+   * change, future preferences). Server validates, merges over current,
+   * persists, and echoes the resolved snapshot back via SettingsPushed.
+   */
+  SettingsUpdate: 'Roleplay:Net:Settings:Update',
+
+  /**
+   * Server -> client. Echoes the post-merge settings after a successful
+   * SettingsUpdate (or any future admin-driven settings push). Lets the
+   * UI sync write-back state without round-tripping a refetch.
+   */
+  SettingsPushed: 'Roleplay:Net:Settings:Pushed',
 } as const;
 
 export type NetEventName = (typeof NetEvents)[keyof typeof NetEvents];
@@ -137,6 +195,8 @@ export interface NetEventPayloads {
     DiscordAvatarURL: string | null;
     /** Whether this account already owns at least one Active character. */
     HasCharacters: boolean;
+    /** Resolved settings (defaults merged in); the SPA syncs its store. */
+    Settings: AccountSettings;
   };
   [NetEvents.AuthFailure]: {
     Reason: string;
@@ -177,5 +237,23 @@ export interface NetEventPayloads {
   [NetEvents.CharacterSpawned]: CharacterSpawnPayload;
   [NetEvents.CharacterSelectFailure]: {
     Reason: string;
+  };
+  [NetEvents.ChatPush]: {
+    Body: string;
+  };
+  [NetEvents.ChatSubmit]: {
+    Body: string;
+  };
+  [NetEvents.ChatClear]: Record<string, never>;
+  [NetEvents.ChatCommandList]: {
+    Commands: CommandHint[];
+  };
+  [NetEvents.SessionReturnToSelect]: Record<string, never>;
+  [NetEvents.SessionReturnToAuth]: Record<string, never>;
+  [NetEvents.SettingsUpdate]: {
+    Settings: Partial<AccountSettings>;
+  };
+  [NetEvents.SettingsPushed]: {
+    Settings: AccountSettings;
   };
 }

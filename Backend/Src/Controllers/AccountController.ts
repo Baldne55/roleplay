@@ -1,10 +1,12 @@
 import { AuthCinematicCamera, AuthSpawnCoord } from '@Shared/Constants/AuthSkybox.js';
 import { NetEvents, type NetEventPayloads } from '@Shared/Events/NetEvents.js';
+import { ChatColor, ChatFormatter, Sanitize } from '@Shared/Chat/Index.js';
 import { Logger } from '@/Util/Logger.js';
 import type { PlayerStateService } from '@/Services/PlayerStateService.js';
 import type { RoutingBucketService } from '@/Services/RoutingBucketService.js';
 import type { DiscordService } from '@/Services/DiscordService.js';
 import type { AccountService } from '@/Services/AccountService.js';
+import type { ChatService } from '@/Services/ChatService.js';
 import type { ServerConfig } from '@/Infrastructure/Config/ServerConfig.js';
 
 declare const source: number;
@@ -42,6 +44,7 @@ export class AccountController {
     private readonly Routing: RoutingBucketService,
     private readonly Discord: DiscordService,
     private readonly Accounts: AccountService,
+    private readonly Chat: ChatService,
     private readonly Config: ServerConfig,
   ) {
     on('playerJoining', (): void => {
@@ -53,7 +56,7 @@ export class AccountController {
       this.State.Clear(source);
     });
 
-    this.Log.Info('Handlers registered (playerJoining -> gate, playerDropped -> clear)');
+    this.Log.Debug('Handlers registered (playerJoining -> gate, playerDropped -> clear)');
   }
 
   private async HandleJoin(Src: number): Promise<void> {
@@ -119,7 +122,27 @@ export class AccountController {
       };
       emitNet(NetEvents.AuthPrepared, Src, PreparedPayload);
 
-      this.Log.Info(
+      // Welcome line - rides the same chat pipe used for /help replies.
+      // Sanitize the display name so a player-set Discord nickname can't
+      // sneak `!{#hex}` tokens past the parser. ".mp" tinted with the
+      // PrimeVue Aura primary so the chat brand matches the SPA chrome.
+      const SanitisedName = Sanitize(Profile.DisplayName).trim();
+      const NameOrFallback = SanitisedName.length > 0 ? SanitisedName : 'friend';
+      this.Chat.SendTo(
+        Src,
+        ChatFormatter.OOC(
+          `Welcome to Legacy!{${ChatColor.Primary}}.mp!{${ChatColor.White}} - Roleplay, ${NameOrFallback}.`,
+        ),
+      );
+
+      // Notice block - the per-connection disclaimer. Strict-formal
+      // register per feedback_prose_voice_formal.md. Block framing (60
+      // chars) matches the visual-v2 info-dump convention.
+      for (const Line of NoticeLines) {
+        this.Chat.SendTo(Src, Line);
+      }
+
+      this.Log.Debug(
         `Gated source=${Src} account=${Account.ID} discord=${DiscordID} display="${Profile.DisplayName}"`,
       );
     } catch (Err: unknown) {
@@ -136,6 +159,43 @@ export class AccountController {
     }
   }
 }
+
+/**
+ * Per-connection notice block. Static at module scope so the strings are
+ * built once at boot, not on every join. The opening Header / closing
+ * Footer wrap the disclaimer body in the 60-char block convention used
+ * elsewhere for help-style info dumps.
+ *
+ * Coverage:
+ *   - Non-commercial status.
+ *   - No affiliation with Rockstar Games or Take-Two Interactive.
+ *   - Age-of-majority expectation + mature-content warning.
+ *   - Implicit rules acceptance on continued play.
+ */
+/**
+ * Brand fragment used inside the notice body. Built once at module scope
+ * so the colour tokens around `.mp` are consistent everywhere the brand
+ * appears (welcome line + notice body).
+ */
+const Brand = `Legacy!{${ChatColor.Primary}}.mp!{${ChatColor.White}}`;
+
+const NoticeLines: readonly string[] = [
+  // Block framing in emerald to match the `.mp` accent in the welcome
+  // line. The default red is reserved for ERROR / ADMIN context, which
+  // this is not. Body lines wear the `(( ))` OOC wrap; the header and
+  // footer are decorative borders, not narration.
+  ChatFormatter.Header('Notice', ChatColor.Primary),
+  ChatFormatter.OOC(`${Brand} is a non-monetized roleplay community.`),
+  ChatFormatter.OOC(
+    `${Brand} is not affiliated with Rockstar Games, Take-Two Interactive, or any of their parent companies, subsidiaries, or rights holders.`,
+  ),
+  ChatFormatter.OOC('Players must be of legal adult age in their country of residence.'),
+  ChatFormatter.OOC(
+    'Roleplay may depict violence, injury, and other content unsuitable for minors.',
+  ),
+  ChatFormatter.OOC('Continued play constitutes acceptance of all server rules.'),
+  ChatFormatter.Footer(ChatColor.Primary),
+];
 
 function ExtractLicense(Src: number): string | null {
   const Raw = GetPlayerIdentifierByType(String(Src), 'license');

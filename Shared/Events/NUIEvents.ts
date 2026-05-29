@@ -13,6 +13,8 @@
  */
 
 import type { CharacterSummary } from '../Constants/Character.js';
+import type { AccountSettings } from '../Constants/AccountSettings.js';
+import type { CommandHint } from '../Chat/Index.js';
 
 export const NUIEvents = {
   /**
@@ -97,6 +99,53 @@ export const NUIEvents = {
    * the selector and surfaces Reason inline.
    */
   CharacterSelectFailed: 'Roleplay:NUI:Character:SelectFailed',
+
+  /**
+   * Frontend -> UI. Append a chat line. Body is a token-formatted
+   * string; the SPA parses it into Segments before storing.
+   */
+  ChatPush: 'Roleplay:NUI:Chat:Push',
+
+  /**
+   * Frontend -> UI. Wipe the local scrollback (forward-compat surface
+   * for /clearchat). No producer in this slice.
+   */
+  ChatClear: 'Roleplay:NUI:Chat:Clear',
+
+  /**
+   * Frontend -> UI. Player pressed the chat-open key; SPA focuses the
+   * input bar. Focus state (SetNuiFocus) is mediated by the SPA via
+   * the Chat:Focus NUI callback on mount / unmount.
+   */
+  ChatShowInput: 'Roleplay:NUI:Chat:ShowInput',
+
+  /**
+   * Frontend -> UI. Forwarded command snapshot pushed after spawn -
+   * powers slash autocomplete.
+   */
+  ChatCommandList: 'Roleplay:NUI:Chat:CommandList',
+
+  /**
+   * Frontend -> UI. Player ran /changecharacter from chat. SPA resets
+   * the character list store so the selector re-fetches on mount, marks
+   * the chat scrollback as read-only, and routes to /Character/Select.
+   */
+  SessionReturnToSelect: 'Roleplay:NUI:Session:ReturnToSelect',
+
+  /**
+   * Frontend -> UI. Player ran /logout from chat. SPA flips the Auth
+   * store back to its Prepared state (Discord identity still resolved,
+   * Enter Server clickable), resets the character list, and routes to
+   * /Auth.
+   */
+  SessionReturnToAuth: 'Roleplay:NUI:Session:ReturnToAuth',
+
+  /**
+   * Frontend -> UI. Latest resolved settings - sent on AuthCompleted
+   * (initial hydrate) and again after a SettingsUpdate round-trip
+   * (server echo). UI store overwrites its state on every push.
+   */
+  SettingsHydrate: 'Roleplay:NUI:Settings:Hydrate',
 } as const;
 
 export type NUIEventName = (typeof NUIEvents)[keyof typeof NUIEvents];
@@ -115,6 +164,7 @@ export interface NUIEventPayloads {
     DiscordDisplayName: string;
     DiscordAvatarURL: string | null;
     HasCharacters: boolean;
+    Settings: AccountSettings;
   };
   [NUIEvents.AuthFailed]: {
     Type: typeof NUIEvents.AuthFailed;
@@ -160,6 +210,30 @@ export interface NUIEventPayloads {
   [NUIEvents.CharacterSelectFailed]: {
     Type: typeof NUIEvents.CharacterSelectFailed;
     Reason: string;
+  };
+  [NUIEvents.ChatPush]: {
+    Type: typeof NUIEvents.ChatPush;
+    Body: string;
+  };
+  [NUIEvents.ChatClear]: {
+    Type: typeof NUIEvents.ChatClear;
+  };
+  [NUIEvents.ChatShowInput]: {
+    Type: typeof NUIEvents.ChatShowInput;
+  };
+  [NUIEvents.ChatCommandList]: {
+    Type: typeof NUIEvents.ChatCommandList;
+    Commands: CommandHint[];
+  };
+  [NUIEvents.SessionReturnToSelect]: {
+    Type: typeof NUIEvents.SessionReturnToSelect;
+  };
+  [NUIEvents.SessionReturnToAuth]: {
+    Type: typeof NUIEvents.SessionReturnToAuth;
+  };
+  [NUIEvents.SettingsHydrate]: {
+    Type: typeof NUIEvents.SettingsHydrate;
+    Settings: AccountSettings;
   };
 }
 

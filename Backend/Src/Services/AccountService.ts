@@ -73,7 +73,7 @@ export class AccountService {
     Account.LastLoginAt = Now;
 
     await Account.save();
-    this.Log.Info(`Updated account id=${Account.ID} discord=${Profile.ID} status=${Account.Status}`);
+    this.Log.Debug(`Updated account id=${Account.ID} discord=${Profile.ID} status=${Account.Status}`);
     return Account;
   }
 }

@@ -52,7 +52,7 @@ export class QueueService implements IQueueService {
 
   constructor() {
     this.MaxClients = GetConvarInt('sv_maxclients', 48);
-    this.Log.Info(`Initialised - sv_maxclients=${this.MaxClients}`);
+    this.Log.Debug(`Initialised - sv_maxclients=${this.MaxClients}`);
     this.StartTicker();
   }
 
@@ -73,7 +73,7 @@ export class QueueService implements IQueueService {
   Admit(Source: number, Deferrals: Deferrals): Promise<void> {
     if (this.Queue.length === 0 && this.TotalPotentialActive() < this.MaxClients) {
       this.InFlight.push(Date.now());
-      this.Log.Info(`Admit direct - source=${Source} active=${this.TotalPotentialActive()}/${this.MaxClients}`);
+      this.Log.Debug(`Admit direct - source=${Source} active=${this.TotalPotentialActive()}/${this.MaxClients}`);
       return Promise.resolve();
     }
 
@@ -85,7 +85,7 @@ export class QueueService implements IQueueService {
       this.Queue.push(Entry);
       const Position = this.Queue.length;
       Deferrals.Update(`Server full. Queue position ${Position} / ${Position}.`);
-      this.Log.Info(`Queued - source=${Source} position=${Position}`);
+      this.Log.Debug(`Queued - source=${Source} position=${Position}`);
     });
   }
 
@@ -94,7 +94,7 @@ export class QueueService implements IQueueService {
     if (Idx >= 0) {
       const [Entry] = this.Queue.splice(Idx, 1) as [QueueEntry];
       Entry.Reject(new Error('Player dropped before admission'));
-      this.Log.Info(`Removed from queue - source=${Source}`);
+      this.Log.Debug(`Removed from queue - source=${Source}`);
     }
   }
 
@@ -103,7 +103,7 @@ export class QueueService implements IQueueService {
     // admitted, so FIFO matches reality even without per-source keying.
     const Stamp = this.InFlight.shift();
     if (Stamp !== undefined) {
-      this.Log.Info(`In-flight cleared (joined) - waited=${Date.now() - Stamp}ms remaining=${this.InFlight.length}`);
+      this.Log.Debug(`In-flight cleared (joined) - waited=${Date.now() - Stamp}ms remaining=${this.InFlight.length}`);
     }
   }
 
@@ -135,7 +135,7 @@ export class QueueService implements IQueueService {
     this.InFlight.push(Date.now());
     Entry.Deferrals.Done();
     Entry.Resolve();
-    this.Log.Info(`Admit from queue - source=${Entry.Source} waited=${Date.now() - Entry.EnqueuedAt}ms`);
+    this.Log.Debug(`Admit from queue - source=${Entry.Source} waited=${Date.now() - Entry.EnqueuedAt}ms`);
   }
 
   private BroadcastPositions(): void {

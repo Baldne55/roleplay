@@ -24,6 +24,7 @@ import {
 } from '@Shared/Constants/Character';
 import { ClothingCategories } from '@Shared/Constants/Outfit';
 import { useCharacterStore } from '@/Stores/Character';
+import { useCharacterListStore } from '@/Stores/CharacterList';
 import { Preview } from '@/Services/PreviewClient';
 
 /**
@@ -46,7 +47,24 @@ const OutfitSliderIndex: Record<string, OutfitSliderMeta> = (() => {
 })();
 
 const Char = useCharacterStore();
+const List = useCharacterListStore();
 const Router = useRouter();
+
+// Cancel is only meaningful when the account already owns at least one
+// character. Zero-character accounts have no Selector to return to and
+// must complete creation, so the link stays hidden.
+const CanCancel = computed<boolean>(() => List.HasCharacters);
+
+function Cancel(): void {
+  // Mirror the first-page Back teardown: tear down the preview shell
+  // explicitly (the ped is teleported back into the auth skybox), then
+  // wipe the wizard so a future "Create New Character" starts fresh.
+  void Preview.StopPreview();
+  Char.ResetAll();
+  Router.replace('/Character/Select').catch(() => {
+    /* navigation guard cancels are silent */
+  });
+}
 
 const RootEl = useTemplateRef<HTMLElement>('RootEl');
 const OpacityPopover = useTemplateRef<InstanceType<typeof Popover>>('OpacityPopover');
@@ -391,14 +409,24 @@ onBeforeUnmount(() => {
             </template>
           </Button>
         </div>
-        <button
-          v-if="IsFirstPage"
-          type="button"
-          class="BackToDetails"
-          @click="OnBack"
-        >
-          Back to details
-        </button>
+        <div class="WizardSecondary">
+          <button
+            v-if="IsFirstPage"
+            type="button"
+            class="SecondaryLink"
+            @click="OnBack"
+          >
+            Back to details
+          </button>
+          <button
+            v-if="CanCancel"
+            type="button"
+            class="SecondaryLink"
+            @click="Cancel"
+          >
+            Cancel creation
+          </button>
+        </div>
       </template>
     </Card>
 
@@ -643,9 +671,14 @@ onBeforeUnmount(() => {
   gap: 0.5rem;
 }
 
-.BackToDetails {
-  display: block;
-  margin: 0.5rem auto 0;
+.WizardSecondary {
+  display: flex;
+  justify-content: center;
+  gap: 1rem;
+  margin: 0.5rem 0 0;
+}
+
+.SecondaryLink {
   background: transparent;
   border: 0;
   padding: 0;
@@ -656,7 +689,7 @@ onBeforeUnmount(() => {
   transition: color 0.12s ease;
 }
 
-.BackToDetails:hover {
+.SecondaryLink:hover {
   color: var(--p-primary-color);
   text-decoration: underline;
   text-underline-offset: 2px;

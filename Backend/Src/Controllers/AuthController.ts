@@ -1,4 +1,5 @@
 import { NetEvents, type NetEventPayloads } from '@Shared/Events/NetEvents.js';
+import { ResolveAccountSettings } from '@Shared/Constants/AccountSettings.js';
 import { Logger } from '@/Util/Logger.js';
 import type { PlayerStateService } from '@/Services/PlayerStateService.js';
 import type { AccountSessionService } from '@/Services/AccountSessionService.js';
@@ -46,7 +47,7 @@ export class AuthController {
       this.Sessions.Release(source);
     });
 
-    this.Log.Info('Handlers registered (AuthFinalize, playerDropped -> session release)');
+    this.Log.Debug('Handlers registered (AuthFinalize, playerDropped -> session release)');
   }
 
   private async HandleFinalize(Src: number): Promise<void> {
@@ -82,9 +83,12 @@ export class AuthController {
         DiscordDisplayName: Account.DiscordDisplayName ?? 'friend',
         DiscordAvatarURL: AvatarURL,
         HasCharacters: Existing.length > 0,
+        // Resolved (defaults-merged) so the SPA receives a fully
+        // populated object - no client-side default-filling needed.
+        Settings: ResolveAccountSettings(Account.Settings),
       };
       emitNet(NetEvents.AuthSuccess, Src, Payload);
-      this.Log.Info(
+      this.Log.Debug(
         `Finalised source=${Src} account=${PlayerState.AccountID} characters=${Existing.length}`,
       );
     } catch (Err: unknown) {

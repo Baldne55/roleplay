@@ -55,7 +55,7 @@ export class HttpRouter {
     if (this.Mounted) return;
     this.Mounted = true;
     SetHttpHandler((Request, Response) => this.Dispatch(Request, Response));
-    this.Log.Info(`Mounted with ${this.Routes.size} route(s)`);
+    this.Log.Debug(`Mounted with ${this.Routes.size} route(s)`);
   }
 
   private Dispatch(Request: HttpRequest, Response: HttpResponse): void {

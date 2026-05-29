@@ -19,12 +19,26 @@ export class RoutingBucketService {
   AssignAuthBucket(Source: number): number {
     const Bucket = Source + AuthBucketOffset;
     SetPlayerRoutingBucket(String(Source), Bucket);
-    this.Log.Info(`Bucket assigned - source=${Source} bucket=${Bucket}`);
+    this.Log.Debug(`Bucket assigned - source=${Source} bucket=${Bucket}`);
     return Bucket;
   }
 
   MoveToWorld(Source: number): void {
     SetPlayerRoutingBucket(String(Source), 0);
-    this.Log.Info(`Bucket -> world (0) - source=${Source}`);
+    this.Log.Debug(`Bucket -> world (0) - source=${Source}`);
+  }
+
+  /**
+   * Move a previously-spawned player back into their per-source auth
+   * bucket. Mirrors AssignAuthBucket's allocation formula so the player
+   * lands in the same isolated dimension they had on connect. Used by
+   * mid-session transitions (/changecharacter, /logout) so the returning
+   * skybox ped doesn't pollute the world for anyone else.
+   */
+  MoveToAuth(Source: number): number {
+    const Bucket = Source + AuthBucketOffset;
+    SetPlayerRoutingBucket(String(Source), Bucket);
+    this.Log.Debug(`Bucket -> auth (${Bucket}) - source=${Source}`);
+    return Bucket;
   }
 }

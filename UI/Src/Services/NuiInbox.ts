@@ -3,6 +3,8 @@ import { NUIEvents, type NUIMessage } from '@Shared/Events/NUIEvents.js';
 import { useAuthStore } from '@/Stores/Auth';
 import { useCharacterStore } from '@/Stores/Character';
 import { useCharacterListStore } from '@/Stores/CharacterList';
+import { useChatStore } from '@/Stores/Chat';
+import { useSettingsStore } from '@/Stores/Settings';
 
 /**
  * Reads incoming SendNUIMessage payloads from the Frontend (client-side
@@ -52,6 +54,11 @@ export class NuiInbox {
         return;
       case NUIEvents.AuthCompleted: {
         Auth.HandleSuccess(Data.DiscordDisplayName, Data.DiscordAvatarURL, Data.HasCharacters);
+        // Server-side settings snapshot wins over the localStorage cache;
+        // hydrate before the next view renders so the theme picker shows
+        // the persisted choice.
+        const Settings = useSettingsStore();
+        Settings.Hydrate(Data.Settings);
         // Existing characters go straight to the selector; zero-character
         // accounts fall through to the create flow.
         const Target = Data.HasCharacters ? '/Character/Select' : '/Character/Details';
@@ -111,6 +118,54 @@ export class NuiInbox {
       case NUIEvents.OutfitBounds: {
         const Character = useCharacterStore();
         Character.SetOutfitBounds(Data.Categories);
+        return;
+      }
+      case NUIEvents.ChatPush: {
+        const Chat = useChatStore();
+        Chat.Push(Data.Body);
+        return;
+      }
+      case NUIEvents.ChatClear: {
+        const Chat = useChatStore();
+        Chat.Clear();
+        return;
+      }
+      case NUIEvents.ChatShowInput: {
+        const Chat = useChatStore();
+        Chat.ShowInput();
+        return;
+      }
+      case NUIEvents.ChatCommandList: {
+        const Chat = useChatStore();
+        Chat.SetCommands(Data.Commands);
+        return;
+      }
+      case NUIEvents.SettingsHydrate: {
+        const Settings = useSettingsStore();
+        Settings.Hydrate(Data.Settings);
+        return;
+      }
+      case NUIEvents.SessionReturnToSelect: {
+        // /changecharacter: the spawned character is gone server-side;
+        // reset the list store so the selector re-fetches on mount and
+        // route back. Auth state is preserved (the player is still
+        // signed in).
+        const List = useCharacterListStore();
+        List.Reset();
+        this.RouterInstance.replace('/Character/Select').catch((Err: unknown) => {
+          console.error('[NuiInbox] /Character/Select navigation failed', Err);
+        });
+        return;
+      }
+      case NUIEvents.SessionReturnToAuth: {
+        // /logout: rewind to the post-Prepared auth state so the Enter
+        // Server button is clickable again, then route back.
+        Auth.ResetForReturn();
+        const List = useCharacterListStore();
+        List.Reset();
+        this.RouterInstance.replace('/Auth').catch((Err: unknown) => {
+          console.error('[NuiInbox] /Auth navigation failed', Err);
+        });
         return;
       }
       default: {

@@ -37,7 +37,7 @@ export class AccountSessionService {
     }
     this.AccountToSource.set(AccountID, Source);
     this.SourceToAccount.set(Source, AccountID);
-    this.Log.Info(`Claimed account=${AccountID} for source=${Source}`);
+    this.Log.Debug(`Claimed account=${AccountID} for source=${Source}`);
   }
 
   Release(Source: number): void {
@@ -46,7 +46,7 @@ export class AccountSessionService {
     this.SourceToAccount.delete(Source);
     if (this.AccountToSource.get(AccountID) === Source) {
       this.AccountToSource.delete(AccountID);
-      this.Log.Info(`Released account=${AccountID} (source=${Source})`);
+      this.Log.Debug(`Released account=${AccountID} (source=${Source})`);
     }
   }
 }

@@ -13,6 +13,7 @@ import type {
   ValidatedPosition,
 } from '@/Services/PositionValidatorService.js';
 import type { CharacterRepository } from '@/Data/Repositories/CharacterRepository.js';
+import type { ChatController } from '@/Controllers/ChatController.js';
 
 declare const source: number;
 declare function on<T extends (...Args: never[]) => void>(EventName: string, Callback: T): void;
@@ -67,6 +68,7 @@ export class CharacterController {
     private readonly Runtimes: CharacterRuntimeService,
     private readonly Validator: PositionValidatorService,
     private readonly CharacterRows: CharacterRepository,
+    private readonly Chat: ChatController,
   ) {
     onNet(
       NetEvents.CharacterCreate,
@@ -94,7 +96,7 @@ export class CharacterController {
       this.HandleDropped(Src);
     });
 
-    this.Log.Info(
+    this.Log.Debug(
       'Handlers registered (CharacterCreate, CharacterList, CharacterSelect, playerDropped)',
     );
   }
@@ -163,7 +165,7 @@ export class CharacterController {
         Characters: Summaries,
       };
       emitNet(NetEvents.CharacterListResponse, Src, Reply);
-      this.Log.Info(`Listed ${Summaries.length} characters for source=${Src}`);
+      this.Log.Debug(`Listed ${Summaries.length} characters for source=${Src}`);
     } catch (Err: unknown) {
       this.Log.Error(`CharacterList failed for source=${Src}`, { Err: String(Err) });
     }
@@ -220,7 +222,13 @@ export class CharacterController {
         World: Payload.World,
       });
       emitNet(NetEvents.CharacterSpawned, Src, Payload);
-      this.Log.Info(`Spawned source=${Src} character=${Payload.CharacterID}`);
+      // Hand the registered command surface to the freshly-spawned client
+      // so its chat autocomplete is populated before the player can type.
+      this.Chat.PushCommandListToSource(Src);
+      // Welcome card lands in chat right after spawn. Fire-and-forget so
+      // a slow Account read can't block the spawn-info log line.
+      void this.Chat.PushSpawnWelcome(Src, Payload.FirstName, Payload.LastName);
+      this.Log.Debug(`Spawned source=${Src} character=${Payload.CharacterID}`);
     } catch (Err: unknown) {
       if (Err instanceof CharacterSelectError) {
         this.Log.Warn(
@@ -237,12 +245,23 @@ export class CharacterController {
   /**
    * playerDropped: snapshot + persist.
    *
+   * Thin wrapper around PersistAndDetachRuntime - the same persist path
+   * is reused by mid-session transitions (/changecharacter, /logout) so
+   * the snapshot logic lives there.
+   */
+  private HandleDropped(Src: number): void {
+    this.PersistAndDetachRuntime(Src);
+  }
+
+  /**
+   * Snapshot, persist, and detach the runtime for a spawned source.
+   *
    *   Position / heading / world: prefer the validator's last-sane
    *   value. The validator's per-tick delta check has been throwing
    *   out any teleport-hack snapshots throughout the session, so the
    *   cached value is the most trustworthy thing we have. Fall back
    *   to a fresh native read only if the validator has no entry
-   *   (player disconnected before any tick fired).
+   *   (caller invoked us before any tick fired).
    *
    *   HP / AP: read freshly from natives. These are bounded ints and
    *   we clamp aggressively (Math.max/min + Number.isFinite + Math.floor).
@@ -251,14 +270,16 @@ export class CharacterController {
    *   from the in-memory runtime cache (server-tracked, never client-
    *   trusted in the first place).
    *
-   * Detach() + Validator.Detach() run BEFORE the async write so a
-   * reconnect on the same Source can't race against a late save.
+   * Runtime + Validator are detached BEFORE the async write so a
+   * subsequent spawn (reconnect / character-switch) on the same Source
+   * can't race against a late save. Caller is responsible for any
+   * downstream state changes (phase, bucket, etc.).
    */
-  private HandleDropped(Src: number): void {
+  PersistAndDetachRuntime(Src: number): void {
     const Runtime = this.Runtimes.Detach(Src);
     if (Runtime === null) {
-      // Player never reached Spawned (or already detached via a future
-      // character-switch path). Drop validator entry if any and bail.
+      // Source never reached Spawned (or already detached). Drop the
+      // validator entry if any and bail.
       this.Validator.Detach(Src);
       return;
     }
@@ -275,7 +296,7 @@ export class CharacterController {
       // economy layer; IsMasked / Injury / Bleeding revert to defaults
       // at most, which is the smallest harm).
       this.Log.Warn(
-        `playerDropped: no trustworthy position for source=${Src} character=${Runtime.CharacterID}; ` +
+        `Runtime persist: no trustworthy position for source=${Src} character=${Runtime.CharacterID}; ` +
           'save skipped',
       );
       return;
@@ -302,7 +323,7 @@ export class CharacterController {
         Bank: Runtime.Bank,
       })
       .then(() => {
-        this.Log.Info(
+        this.Log.Debug(
           `Persisted character=${Runtime.CharacterID} source=${Src} at ` +
             `(${Position.X.toFixed(1)}, ${Position.Y.toFixed(1)}, ${Position.Z.toFixed(1)}) ` +
             `world=${Position.World}`,

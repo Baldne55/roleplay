@@ -42,7 +42,7 @@ export class CharacterController {
     onNet(
       NetEvents.CharacterCreateSuccess,
       (Payload: NetEventPayloads[typeof NetEvents.CharacterCreateSuccess]): void => {
-        this.Log.Info(
+        this.Log.Debug(
           `CharacterCreateSuccess id=${Payload.CharacterID} name="${Payload.FirstName} ${Payload.LastName}"`,
         );
         this.Nui.Send(NUIEvents.CharacterCreated, {
@@ -65,7 +65,7 @@ export class CharacterController {
     onNet(
       NetEvents.CharacterListResponse,
       (Payload: NetEventPayloads[typeof NetEvents.CharacterListResponse]): void => {
-        this.Log.Info(`CharacterListResponse count=${Payload.Characters.length}`);
+        this.Log.Debug(`CharacterListResponse count=${Payload.Characters.length}`);
         this.Nui.Send(NUIEvents.CharacterListLoaded, { Characters: Payload.Characters });
       },
     );
@@ -73,7 +73,7 @@ export class CharacterController {
     onNet(
       NetEvents.CharacterSpawned,
       (Payload: NetEventPayloads[typeof NetEvents.CharacterSpawned]): void => {
-        this.Log.Info(`CharacterSpawned id=${Payload.CharacterID}`);
+        this.Log.Debug(`CharacterSpawned id=${Payload.CharacterID}`);
         this.Nui.Send(NUIEvents.CharacterSpawning, {});
         // Release NUI focus so the keyboard / mouse go back to the game.
         this.Nui.Focus(false, false);
@@ -118,25 +118,25 @@ export class CharacterController {
     this.Nui.OnCallback<NetEventPayloads[typeof NetEvents.CharacterCreate]>(
       'CharacterCreate',
       (Data): void => {
-        this.Log.Info(`UI requested CharacterCreate name="${Data.FirstName} ${Data.LastName}"`);
+        this.Log.Debug(`UI requested CharacterCreate name="${Data.FirstName} ${Data.LastName}"`);
         emitNet(NetEvents.CharacterCreate, Data);
       },
     );
 
     this.Nui.OnCallback('CharacterList', (): void => {
-      this.Log.Info('UI requested CharacterList');
+      this.Log.Debug('UI requested CharacterList');
       emitNet(NetEvents.CharacterList);
     });
 
     this.Nui.OnCallback<NetEventPayloads[typeof NetEvents.CharacterSelect]>(
       'CharacterSelect',
       (Data): void => {
-        this.Log.Info(`UI requested CharacterSelect id=${Data.CharacterID}`);
+        this.Log.Debug(`UI requested CharacterSelect id=${Data.CharacterID}`);
         emitNet(NetEvents.CharacterSelect, Data);
       },
     );
 
-    this.Log.Info(
+    this.Log.Debug(
       'Handlers registered (Net: CreateSuccess/Failure, ListResponse, Spawned, SelectFailure; ' +
         'NUI: PreviewStart/Apply/Outfit/Camera/Stop, Create, List, Select)',
     );

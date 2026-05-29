@@ -54,6 +54,18 @@ export const useAuthStore = defineStore('Auth', () => {
     Phase.value = 'Failed';
   }
 
+  /**
+   * Rewind to the post-Prepared, pre-Submit state after a /logout. The
+   * Discord identity is still resolved (server hasn't re-run the gate),
+   * so we keep the cached display name + avatar and just re-enable the
+   * Enter Server button.
+   */
+  function ResetForReturn(): void {
+    Reason.value = null;
+    HasCharacters.value = false;
+    Phase.value = DiscordDisplayName.value !== null ? 'Prepared' : 'Idle';
+  }
+
   return {
     Phase,
     Reason,
@@ -64,5 +76,6 @@ export const useAuthStore = defineStore('Auth', () => {
     BeginSubmitting,
     HandleSuccess,
     HandleFailure,
+    ResetForReturn,
   };
 });

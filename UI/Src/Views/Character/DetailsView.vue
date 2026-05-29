@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { computed } from 'vue';
 import { useRouter } from 'vue-router';
 import Button from 'primevue/button';
 import Card from 'primevue/card';
@@ -14,6 +15,7 @@ import {
   IconUser,
   IconUserCircle,
   IconWeight,
+  IconX,
 } from '@tabler/icons-vue';
 import {
   BloodTypes,
@@ -28,13 +30,28 @@ import {
   NameMinLength,
 } from '@Shared/Constants/Character';
 import { useCharacterStore } from '@/Stores/Character';
+import { useCharacterListStore } from '@/Stores/CharacterList';
 
 const Char = useCharacterStore();
+const List = useCharacterListStore();
 const Router = useRouter();
+
+// Cancel is only meaningful when the account already owns at least one
+// character - otherwise there's nowhere to land. Zero-character accounts
+// have no Selector route to go back to (they're routed straight here on
+// AuthCompleted), so the button stays hidden.
+const CanCancel = computed<boolean>(() => List.HasCharacters);
 
 function Continue(): void {
   if (!Char.DetailsValid) return;
   Router.push('/Character/Creator').catch(() => {
+    /* navigation guard cancels are silent */
+  });
+}
+
+function Cancel(): void {
+  Char.ResetAll();
+  Router.replace('/Character/Select').catch(() => {
     /* navigation guard cancels are silent */
   });
 }
@@ -159,15 +176,27 @@ function Continue(): void {
             Names: English letters only, capitalised, {{ NameMinLength }}-{{ NameMaxLength }} characters.
           </p>
 
-          <Button
-            type="submit"
-            label="Continue"
-            icon-pos="right"
-            fluid
-            :disabled="!Char.DetailsValid"
-          >
-            <template #icon><IconArrowRight :size="16" /></template>
-          </Button>
+          <div class="ActionRow" :class="{ ActionRowSplit: CanCancel }">
+            <Button
+              v-if="CanCancel"
+              type="button"
+              severity="secondary"
+              label="Cancel"
+              fluid
+              @click="Cancel"
+            >
+              <template #icon><IconX :size="16" /></template>
+            </Button>
+            <Button
+              type="submit"
+              label="Continue"
+              icon-pos="right"
+              fluid
+              :disabled="!Char.DetailsValid"
+            >
+              <template #icon><IconArrowRight :size="16" /></template>
+            </Button>
+          </div>
         </form>
       </template>
     </Card>
@@ -284,5 +313,14 @@ function Continue(): void {
   text-align: center;
   font-size: 0.75rem;
   color: var(--p-text-muted-color);
+}
+
+.ActionRow {
+  display: grid;
+  gap: 0.5rem;
+}
+
+.ActionRowSplit {
+  grid-template-columns: 1fr 2fr;
 }
 </style>

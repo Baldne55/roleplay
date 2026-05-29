@@ -1,3 +1,4 @@
+import type { AccountSettings } from '@Shared/Constants/AccountSettings.js';
 import { Account } from '@/Data/Models/Account.js';
 
 /**
@@ -22,5 +23,13 @@ export class AccountRepository {
 
   Create(Fields: Partial<Account>): Promise<Account> {
     return Account.create(Fields as unknown as Account);
+  }
+
+  /**
+   * Replace the settings JSON for the given account. Merge semantics
+   * live in AccountSettingsService - this is the dumb persistence call.
+   */
+  async UpdateSettings(ID: string, Settings: AccountSettings): Promise<void> {
+    await Account.update({ Settings }, { where: { ID } });
   }
 }

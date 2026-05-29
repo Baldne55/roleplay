@@ -10,13 +10,13 @@ import {
   IconMoon,
   IconSun,
 } from '@tabler/icons-vue';
+import { ThemeModes, type ThemeMode } from '@Shared/Constants/AccountSettings';
 import { useAuthStore } from '@/Stores/Auth';
-import { useThemeStore } from '@/Stores/Theme';
-import { ThemeModes, type ThemeMode } from '@/Services/Theme';
+import { useSettingsStore } from '@/Stores/Settings';
 import LogoUrl from '@/Assets/Auth/Logo.png';
 
 const Auth = useAuthStore();
-const Theme = useThemeStore();
+const Settings = useSettingsStore();
 
 const ShowAvatar = computed(
   () => Auth.DiscordAvatarURL !== null && Auth.Phase !== 'Idle',
@@ -123,11 +123,11 @@ function HandleEnter(): void {
                 type="button"
                 role="radio"
                 size="small"
-                :severity="Theme.Mode === Choice ? 'primary' : 'secondary'"
-                :outlined="Theme.Mode !== Choice"
+                :severity="Settings.ThemeMode === Choice ? 'primary' : 'secondary'"
+                :outlined="Settings.ThemeMode !== Choice"
                 :label="Choice"
-                :aria-checked="Theme.Mode === Choice"
-                @click="Theme.Set(Choice)"
+                :aria-checked="Settings.ThemeMode === Choice"
+                @click="Settings.SetThemeMode(Choice)"
               >
                 <template #icon>
                   <component :is="ThemeIcons[Choice]" :size="14" />

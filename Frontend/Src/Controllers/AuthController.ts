@@ -25,14 +25,14 @@ export class AuthController {
     private readonly Nui: NuiService,
   ) {
     onNet(NetEvents.AuthInit, (Payload: NetEventPayloads[typeof NetEvents.AuthInit]): void => {
-      this.Log.Info(`AuthInit received - bucket=${Payload.Bucket}`);
+      this.Log.Debug(`AuthInit received - bucket=${Payload.Bucket}`);
       this.HandleAuthInit(Payload).catch((Err: unknown) => {
         this.Log.Error('AuthInit handling failed', { Err: String(Err) });
       });
     });
 
     onNet(NetEvents.AuthPrepared, (Payload: NetEventPayloads[typeof NetEvents.AuthPrepared]): void => {
-      this.Log.Info(`AuthPrepared discord=${Payload.DiscordID} display="${Payload.DiscordDisplayName}"`);
+      this.Log.Debug(`AuthPrepared discord=${Payload.DiscordID} display="${Payload.DiscordDisplayName}"`);
       this.Nui.Send(NUIEvents.AuthPrepared, {
         DiscordDisplayName: Payload.DiscordDisplayName,
         DiscordAvatarURL: Payload.DiscordAvatarURL,
@@ -40,13 +40,14 @@ export class AuthController {
     });
 
     onNet(NetEvents.AuthSuccess, (Payload: NetEventPayloads[typeof NetEvents.AuthSuccess]): void => {
-      this.Log.Info(
+      this.Log.Debug(
         `AuthSuccess display="${Payload.DiscordDisplayName}" hasCharacters=${Payload.HasCharacters}`,
       );
       this.Nui.Send(NUIEvents.AuthCompleted, {
         DiscordDisplayName: Payload.DiscordDisplayName,
         DiscordAvatarURL: Payload.DiscordAvatarURL,
         HasCharacters: Payload.HasCharacters,
+        Settings: Payload.Settings,
       });
     });
 
@@ -56,11 +57,11 @@ export class AuthController {
     });
 
     this.Nui.OnCallback('AuthFinalize', (): void => {
-      this.Log.Info('UI requested finalize, emitting AuthFinalize to server');
+      this.Log.Debug('UI requested finalize, emitting AuthFinalize to server');
       emitNet(NetEvents.AuthFinalize);
     });
 
-    this.Log.Info('Handlers registered (AuthInit, AuthPrepared, AuthSuccess, AuthFailure, NUI AuthFinalize)');
+    this.Log.Debug('Handlers registered (AuthInit, AuthPrepared, AuthSuccess, AuthFailure, NUI AuthFinalize)');
   }
 
   private async HandleAuthInit(Payload: NetEventPayloads[typeof NetEvents.AuthInit]): Promise<void> {

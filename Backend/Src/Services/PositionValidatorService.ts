@@ -71,7 +71,7 @@ export class PositionValidatorService {
   Start(): void {
     if (this.TickHandle !== null) return;
     this.TickHandle = setInterval(() => this.Tick(), this.TickIntervalMs);
-    this.Log.Info(
+    this.Log.Debug(
       `Started - tick=${this.TickIntervalMs}ms threshold=${this.MaxDeltaMetersPerTick}m`,
     );
   }
@@ -95,7 +95,7 @@ export class PositionValidatorService {
       Violations: 0,
       GraceUntilMs: Now + 5000,
     });
-    this.Log.Info(
+    this.Log.Debug(
       `Seeded source=${Source} at (${Position.X.toFixed(1)}, ${Position.Y.toFixed(1)}, ${Position.Z.toFixed(1)})`,
     );
   }

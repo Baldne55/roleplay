@@ -14,7 +14,7 @@ mkdirSync(Dest, { recursive: true });
 
 let CopyCount = 0;
 
-const TopLevelFiles = ['index.html', 'Style.css'];
+const TopLevelFiles = ['index.html', 'Style.css', 'Script.js'];
 for (const Name of TopLevelFiles) {
   copyFileSync(join(Here, Name), join(Dest, Name));
   CopyCount += 1;

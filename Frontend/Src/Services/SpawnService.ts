@@ -127,7 +127,7 @@ export class SpawnService {
     ShutdownLoadingScreen();
     ShutdownLoadingScreenNui();
 
-    this.Log.Info(`Auth shell ready - ped=${Ped} bucket-isolated`);
+    this.Log.Debug(`Auth shell ready - ped=${Ped} bucket-isolated`);
   }
 
   /**
@@ -218,7 +218,7 @@ export class SpawnService {
 
     DoScreenFadeIn(400);
 
-    this.Log.Info(
+    this.Log.Debug(
       `Spawned character=${Payload.CharacterID} at ` +
         `(${Payload.Coord.X.toFixed(1)}, ${Payload.Coord.Y.toFixed(1)}, ${Payload.Coord.Z.toFixed(1)}) ` +
         `world=${Payload.World}`,

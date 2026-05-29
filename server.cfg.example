@@ -74,6 +74,22 @@ set discord_guild_invite "https://discord.gg/REPLACE_WITH_INVITE_CODE"
 # Pending - the UCP is the only path out.
 set ucp_url "https://REPLACE_WITH_UCP_HOST"
 
+# ─── Loading screen: hide default busy spinner ────────────────────────────────
+# FXServer normally paints a "Loading game (NN%)" busy spinner in the bottom-
+# right corner over the top of any custom loadscreen. The replicated convar
+# below suppresses it so our LoadScreen's bottom-centre progress bar is the
+# only progress UI on screen.
+setr sv_showBusySpinnerOnLoadingScreen false
+
+# ─── Log level (development vs production) ────────────────────────────────────
+# Replicated to clients via setr so Frontend and Backend honour the same
+# threshold. Anything below this level is filtered before format / I/O.
+#   debug  - everything (per-player chatter, handler registration, etc.)
+#   info   - lifecycle events (boot, connect, spawn, drop)   [DEV DEFAULT]
+#   warn   - warnings + errors only                          [PROD RECOMMENDED]
+#   error  - errors only
+setr log_level "info"
+
 # ─── txAdmin / monitor: deliberately NOT ensured ──────────────────────────────
 # The `monitor` resource (txAdmin web panel) ships with the FXServer artifact at
 # citizen/system_resources/monitor/. It only auto-starts when FXServer.exe is

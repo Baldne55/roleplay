@@ -140,7 +140,7 @@ export class PedDressingService {
       Poll();
     });
     this.CurrentGender = Gender;
-    this.Log.Info(`Model loaded - ${ModelName}`);
+    this.Log.Debug(`Model loaded - ${ModelName}`);
   }
 
   /**

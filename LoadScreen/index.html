@@ -9,12 +9,24 @@
   <body>
     <!--
       Loading screen. Full-bleed background image with the brand logo
-      centered on top. FXServer renders its native "Loading game (NN%)"
-      indicator in the bottom-right of this page automatically; we don't
-      add our own spinner.
+      centered on top. We render our own progress indicator in the bottom
+      center; the Script.js handler also consumes FXServer's loadProgress
+      stream which suppresses the default bottom-right "Loading game (NN%)"
+      overlay (FXServer falls back to its own text only when the page
+      ignores the event).
     -->
     <main class="Stage" aria-hidden="true">
       <img src="./Assets/Logo.png" alt="" class="Logo" />
     </main>
+    <footer class="Progress" aria-hidden="true">
+      <div class="ProgressBar">
+        <div class="ProgressFill" id="ProgressFill"></div>
+      </div>
+      <div class="ProgressMeta">
+        <span class="ProgressLabel" id="ProgressLabel">Loading</span>
+        <span class="ProgressPercent" id="ProgressPercent">0%</span>
+      </div>
+    </footer>
+    <script src="./Script.js"></script>
   </body>
 </html>

@@ -149,7 +149,7 @@ export class CharacterCreatorService {
     // because the static SliderDef placeholder Max is 0.
     this.PushOutfitBounds(Ped);
 
-    this.Log.Info(`Preview started - gender=${Gender} ped=${Ped}`);
+    this.Log.Debug(`Preview started - gender=${Gender} ped=${Ped}`);
   }
 
   ApplyAppearance(Data: AppearanceData): void {
@@ -251,7 +251,7 @@ export class CharacterCreatorService {
     // inside RestoreAuthShell calls RenderScriptCams(true) so the
     // creator's RenderScriptCams toggle isn't needed here.
     void this.Spawn.RestoreAuthShell();
-    this.Log.Info('Preview stopped, auth shell restored');
+    this.Log.Debug('Preview stopped, auth shell restored');
   }
 
   private MountCamera(Initial: PreviewCamera): void {
