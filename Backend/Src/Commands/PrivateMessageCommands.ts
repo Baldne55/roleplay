@@ -18,11 +18,13 @@ import type { AccountRepository } from '@/Data/Repositories/AccountRepository.js
  * wearer.
  *
  * Block semantics: when the target's account has blocked the sender's
- * account, the recipient's PmFrom line is silently dropped while the
- * sender still sees their own PmTo line. The sender does not learn
- * they have been blocked - matches ragemp / lc-rp convention and
- * means the block reads as "I just got ignored" rather than the
- * confrontational "you have been blocked".
+ * account, both the recipient's PmFrom and the sender's PmTo are
+ * dropped; the sender gets a neutral "could not be delivered" error
+ * that is indistinguishable from sending to an offline player, so the
+ * block does not out the blocker. Earlier builds let the sender's
+ * PmTo through under the ragemp / lc-rp "silent ignore" convention,
+ * but that read as a successful send from the sender's chat surface
+ * and the message effectively went out from their point of view.
  *
  * Self-PM is rejected by default. The single exception is the highest
  * staff rank (Founder) on admin duty - they can /pm themselves to
@@ -77,17 +79,32 @@ export function Register(
       const SenderName = Broadcaster.DisplayName(Ctx.Source) ?? 'Someone';
       const RecipientName = Broadcaster.DisplayName(Target) ?? 'Someone';
 
+      // Check the block BEFORE acking the sender. A sender who sees
+      // their own PmTo line believes the message landed - that's the
+      // surface the user flagged as "the blocked player can still
+      // send the PM". The neutral wording matches the offline-target
+      // error above so the blocker isn't outed by the error itself.
+      // Self-PM is exempt (Founder format probe; you can't block
+      // yourself anyway).
+      if (
+        Target !== Ctx.Source &&
+        RecipientBlockedSender(Store, State, Ctx, Target)
+      ) {
+        return {
+          Outcome: 'BadArgs',
+          Reason: 'Your message could not be delivered.',
+        };
+      }
+
       Chat.SendTo(Ctx.Source, ChatFormatter.PmTo(RecipientName, Body));
 
       if (Target === Ctx.Source) {
         // Founder self-PM: deliver the From-side line on the same
         // connection so both formats render for format probing.
         Chat.SendTo(Ctx.Source, ChatFormatter.PmFrom(SenderName, Body));
-      } else if (!RecipientBlockedSender(Store, State, Ctx, Target)) {
+      } else {
         Chat.SendTo(Target, ChatFormatter.PmFrom(SenderName, Body));
       }
-      // If blocked: sender's PmTo ack already sent above; recipient
-      // silently drops. Sender learns nothing.
 
       Store.Record(Ctx.Source, Target);
       return { Outcome: 'Ok' };
@@ -122,10 +139,15 @@ export function Register(
       const SenderName = Broadcaster.DisplayName(Ctx.Source) ?? 'Someone';
       const RecipientName = Broadcaster.DisplayName(Target) ?? 'Someone';
 
-      Chat.SendTo(Ctx.Source, ChatFormatter.PmTo(RecipientName, Body));
-      if (!RecipientBlockedSender(Store, State, Ctx, Target)) {
-        Chat.SendTo(Target, ChatFormatter.PmFrom(SenderName, Body));
+      if (RecipientBlockedSender(Store, State, Ctx, Target)) {
+        return {
+          Outcome: 'BadArgs',
+          Reason: 'Your message could not be delivered.',
+        };
       }
+
+      Chat.SendTo(Ctx.Source, ChatFormatter.PmTo(RecipientName, Body));
+      Chat.SendTo(Target, ChatFormatter.PmFrom(SenderName, Body));
       Store.Record(Ctx.Source, Target);
 
       return { Outcome: 'Ok' };
