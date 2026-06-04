@@ -1,4 +1,4 @@
-import { ChatFormatter } from '@Shared/Chat/Index.js';
+import { ChatColor } from '@Shared/Chat/Index.js';
 import type { CommandBeforeRun, CommandResult } from '@/Services/CommandTypes.js';
 import { CommandRegistry } from '@/Services/CommandRegistry.js';
 import type { ProximityBroadcaster } from '@/Services/ProximityBroadcaster.js';
@@ -100,11 +100,24 @@ function RegisterNametagAction(
       WriteBag(Ctx.Source, Formatted);
       ResetTimer(Ctx.Source);
 
+      // Echo the action line back to the issuer in the same purple RP
+      // tint the nametag overlay renders it in. Everyone else only sees
+      // the float; without this the issuer would have no chat trace of
+      // having typed it - and a "set, clears in 5s" Info ack reads as
+      // noise once the overlay is doing the announcement work.
+      //
+      // Lead with a `> ` marker (same purple tint) so the issuer can
+      // tell their /ame /amy echo apart from their own /me /my at a
+      // glance: /ame and /amy show as `> * Name action`, while /me and
+      // /my stay at `* Name action`. The marker is issuer-only; the
+      // float above the head is unprefixed.
+      const ChatLine = Possessive
+        ? `!{${ChatColor.RP}}> * ${DisplayName}'s ${Body}!{${ChatColor.White}}`
+        : `!{${ChatColor.RP}}> * ${DisplayName} ${Body}!{${ChatColor.White}}`;
+
       return {
         Outcome: 'Ok',
-        Reply: ChatFormatter.Info(
-          'Roleplay action set. It will clear automatically in 5 seconds.',
-        ),
+        Reply: ChatLine,
       };
     },
   });
