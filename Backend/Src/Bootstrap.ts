@@ -21,10 +21,23 @@ import { PositionValidatorService } from '@/Services/PositionValidatorService.js
 import { CommandRegistry } from '@/Services/CommandRegistry.js';
 import { ChatService } from '@/Services/ChatService.js';
 import { ChatRateLimiter } from '@/Services/ChatRateLimiter.js';
+import { ProximityBroadcaster } from '@/Services/ProximityBroadcaster.js';
+import { PrivateMessageStore } from '@/Services/PrivateMessageStore.js';
 import { AccountSettingsService } from '@/Services/AccountSettingsService.js';
 import { PlayerSessionService } from '@/Services/PlayerSessionService.js';
 import * as CoreCommands from '@/Commands/CoreCommands.js';
 import * as SessionCommands from '@/Commands/SessionCommands.js';
+import * as SpeechCommands from '@/Commands/SpeechCommands.js';
+import * as DirectedSpeechCommands from '@/Commands/DirectedSpeechCommands.js';
+import * as RoleplayActionCommands from '@/Commands/RoleplayActionCommands.js';
+import * as NametagActionCommands from '@/Commands/NametagActionCommands.js';
+import * as PrivateMessageCommands from '@/Commands/PrivateMessageCommands.js';
+import * as LookupCommands from '@/Commands/LookupCommands.js';
+import * as VehicleChatCommands from '@/Commands/VehicleChatCommands.js';
+import * as GlobalOocCommand from '@/Commands/GlobalOocCommand.js';
+import * as ChatUtilityCommands from '@/Commands/ChatUtilityCommands.js';
+import * as AdminDutyCommands from '@/Commands/AdminDutyCommands.js';
+import * as RandomCommands from '@/Commands/RandomCommands.js';
 import { ConnectionController } from '@/Controllers/ConnectionController.js';
 import { AccountController } from '@/Controllers/AccountController.js';
 import { AuthController } from '@/Controllers/AuthController.js';
@@ -88,6 +101,25 @@ RegisterCommand(
   },
   true,
 );
+
+// IC/OOC chat surface. Broadcaster + PmStore are the two services the
+// speech / action / pm / lookup clusters share; they have no inter-
+// dependencies on the controllers below so they wire in here, right
+// after Chat exists.
+const Broadcaster = new ProximityBroadcaster(State, Runtimes, Chat);
+const PmStore = new PrivateMessageStore();
+SpeechCommands.Register(Commands, Broadcaster);
+DirectedSpeechCommands.Register(Commands, Chat, State, Broadcaster, Accounts);
+RoleplayActionCommands.Register(Commands, Broadcaster);
+NametagActionCommands.Register(Commands, Broadcaster);
+PrivateMessageCommands.Register(Commands, Chat, State, Broadcaster, PmStore, Accounts);
+LookupCommands.Register(Commands, State, Broadcaster);
+VehicleChatCommands.Register(Commands, Chat, State, Broadcaster);
+GlobalOocCommand.Register(Commands, Chat, Broadcaster);
+ChatUtilityCommands.Register(Commands, Chat, Settings);
+AdminDutyCommands.Register(Commands, State, Accounts, Broadcaster);
+RandomCommands.Register(Commands, Broadcaster);
+Log.Info(`IC/OOC commands registered - ${Commands.Size} command(s) total`);
 
 const Http = new HttpRouter();
 

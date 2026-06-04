@@ -4,7 +4,6 @@ import { Logger } from '@/Util/Logger.js';
 import type { PlayerStateService } from '@/Services/PlayerStateService.js';
 
 declare function emitNet(EventName: string, Target: number, ...Args: unknown[]): void;
-declare function GetPlayers(): string[];
 
 /**
  * Server -> client transport for chat lines and chat-domain metadata.
@@ -35,15 +34,11 @@ export class ChatService {
 
   BroadcastToSpawned(Body: string): void {
     const Payload: NetEventPayloads[typeof NetEvents.ChatPush] = { Body };
-    let Count = 0;
-    for (const Raw of GetPlayers()) {
-      const Source = Number(Raw);
-      if (!Number.isFinite(Source)) continue;
-      if (this.State.Get(Source)?.Phase !== 'Spawned') continue;
+    const Spawned = this.State.GetSpawnedSources();
+    for (const Source of Spawned) {
       emitNet(NetEvents.ChatPush, Source, Payload);
-      Count += 1;
     }
-    this.Log.Debug(`BroadcastToSpawned reached ${Count} player(s)`);
+    this.Log.Debug(`BroadcastToSpawned reached ${Spawned.length} player(s)`);
   }
 
   PushCommandList(Source: number, Commands: CommandHint[]): void {

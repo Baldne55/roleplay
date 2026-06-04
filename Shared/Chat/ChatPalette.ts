@@ -10,22 +10,60 @@
  * intent.
  */
 export const ChatColor = {
+  /** Soft red. ERROR severity, ADMIN broadcasts. */
   Error: '#FF8080',
-  Warning: '#FFB07A',
-  Info: '#88AAFF',
-  Usage: '#FFA0A0',
-  /** Saturated red, used as the default Brand colour. */
-  Brand: '#E63946',
+  /** True orange. WARNING severity. Bright = attention. */
+  Warning: '#FFA500',
+  /** Clearer blue. INFO severity. */
+  Info: '#5B9BFF',
+  /** Light yellow. USAGE severity (shares the Highlight tone deliberately). */
+  Usage: '#FFE066',
+  /** Emerald. Feature-prefix brand (BANK:, BOOMBOX:, etc.) reads as
+   * in-brand surface alongside the rest of the chat emerald (Cmd,
+   * Header, Primary). Callers can override per-feature via the
+   * optional colour arg on ChatFormatter.Brand. */
+  Brand: '#10B981',
+  /** Soft teal. Inline LABEL: tags AND /low verb tint. */
   Label: '#88E0E0',
-  Money: '#88DD88',
-  Cmd: '#FF6F6F',
+  /** Standard green for $amount formatting. */
+  Money: '#22C55E',
+  /** Emerald. `/command` inline references - matches Primary so command names
+   * read as in-brand surface throughout chat. */
+  Cmd: '#10B981',
+  /** Light yellow. Inline highlight emphasis AND full /pm / /dm / /reply / /rm
+   * lines (the entire PM, including the names and body, renders in this). */
   Highlight: '#FFE066',
-  OOC: '#3A7BD5',
+  /** Grayish. /b local OOC wrap. Designed to read as out-of-character
+   * commentary that fades into the panel chrome rather than competing
+   * with IC speech. */
+  OOC: '#9CA3AF',
   /** /me, /do, /ame, /my IC actions. */
   RP: '#C2A2DA',
-  /** Admin broadcasts + block headers/sections/footers - all soft red. */
+  /**
+   * Directed-speech marker for /to, /shoutto, /wto. Rendered as a bright
+   * pink-magenta `-> ` prefix on the TARGET's copy of the line only -
+   * the bystanders in range see the same line without the marker. The
+   * pinkish-purplish hue is deliberately distinct from every other chat
+   * channel (yellow Highlight is PMs, purple RP is /me, white is speech)
+   * so a player scanning chat finds "someone addressed me" at a glance.
+   */
+  Directed: '#FF66CC',
+  /**
+   * Quiet-channel full-line tints. /say and /shout render entirely white
+   * (volume reads from the verb word "says" / "shouts"). /low and
+   * /whisper carry these tints across the whole utterance so the muted
+   * register reads at a glance.
+   *
+   *   Low     SpeechLow  #D1D5DB - full-line light gray, lowered volume.
+   *   Whisper SpeechQuiet #FFCC99 - full-line pale orange, barely audible.
+   */
+  SpeechLow: '#D1D5DB',
+  SpeechQuiet: '#FFCC99',
+  /** Admin broadcasts - soft red, full-line, no `(( ))` wrap. */
   Admin: '#FF8080',
-  Header: '#FF8080',
+  /** Emerald. Block headers / sections / footers default to this so framed
+   * blocks (welcome card, /help, /id) all read as branded surface. */
+  Header: '#10B981',
   /**
    * PrimeVue Aura primary (emerald 500). Used to tint brand fragments
    * the chat shares with the SPA chrome (e.g. `.mp` in the welcome

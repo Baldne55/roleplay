@@ -7,6 +7,7 @@ import {
   type ThemeMode,
 } from '@Shared/Constants/AccountSettings';
 import { ApplyTheme, SyncCurrentMode } from '@/Services/Theme';
+import { useChatStore } from '@/Stores/Chat';
 
 /**
  * Per-account preferences. Source of truth is the server (`accounts.settings`
@@ -65,7 +66,9 @@ export const useSettingsStore = defineStore('Settings', () => {
 
   /**
    * Server pushed a fresh snapshot (initial AuthCompleted or echo after
-   * an update). Overwrite local state + cache and re-apply DOM.
+   * an update). Overwrite local state + cache and re-apply DOM. Chat-
+   * related fields are forwarded to the Chat store so the overlay is in
+   * its persisted shape before the first push lands.
    */
   function Hydrate(Settings: AccountSettings): void {
     const Next = ResolveAccountSettings(Settings);
@@ -73,6 +76,15 @@ export const useSettingsStore = defineStore('Settings', () => {
     WriteCache({ ThemeMode: Next.ThemeMode });
     SyncCurrentMode(Next.ThemeMode);
     ApplyTheme(Next.ThemeMode);
+    const Chat = useChatStore();
+    Chat.HydrateFrom({
+      ChatTimestamp: Next.ChatTimestamp,
+      ChatVisible: Next.ChatVisible,
+      ChatCharacterCounter: Next.ChatCharacterCounter,
+      ChatBlindfold: Next.ChatBlindfold,
+      ChatFontSize: Next.ChatFontSize,
+      ChatPageSize: Next.ChatPageSize,
+    });
     HasSynced.value = true;
   }
 

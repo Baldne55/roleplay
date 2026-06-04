@@ -140,6 +140,11 @@ export class NuiInbox {
         Chat.SetCommands(Data.Commands);
         return;
       }
+      case NUIEvents.ChatSettingChanged: {
+        const Chat = useChatStore();
+        Chat.ApplySetting(Data.Key, Data.Value);
+        return;
+      }
       case NUIEvents.SettingsHydrate: {
         const Settings = useSettingsStore();
         Settings.Hydrate(Data.Settings);

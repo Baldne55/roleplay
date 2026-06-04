@@ -62,6 +62,31 @@ export class PlayerStateService {
     return this.States.get(Source) ?? null;
   }
 
+  /**
+   * Iterate every tracked Source. The PlayerStateService is the
+   * source of truth for "who is currently connected" - entries are
+   * inserted on playerJoining and dropped on playerDropped. Use this
+   * instead of FXServer's `GetPlayers()` bare-global native, which
+   * is unreliable across runtime bundling configurations and has
+   * already cost us two production incidents on the chat broadcaster.
+   */
+  GetAllSources(): number[] {
+    return Array.from(this.States.keys());
+  }
+
+  /**
+   * Iterate only the Sources currently in the Spawned phase. Used
+   * by chat broadcasts so an in-flight connection (PreAuth or
+   * Authenticated) never receives an IC line through the skybox.
+   */
+  GetSpawnedSources(): number[] {
+    const Out: number[] = [];
+    for (const [Source, State] of this.States.entries()) {
+      if (State.Phase === 'Spawned') Out.push(Source);
+    }
+    return Out;
+  }
+
   SetPhase(Source: number, Phase: PlayerPhase): void {
     const State = this.States.get(Source);
     if (State === undefined) return;

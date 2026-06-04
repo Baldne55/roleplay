@@ -25,6 +25,14 @@ const SettingsSchema = z
     ThemeMode: z
       .union([z.literal('Light'), z.literal('Dark'), z.literal('System')])
       .optional(),
+    ChatTimestamp: z.boolean().optional(),
+    ChatVisible: z.boolean().optional(),
+    ChatCharacterCounter: z.boolean().optional(),
+    ChatBlindfold: z.boolean().optional(),
+    ChatFontSize: z.number().min(0.5).max(1.5).optional(),
+    ChatPageSize: z.number().int().min(5).max(40).optional(),
+    NametagSelfVisible: z.boolean().optional(),
+    NametagIDVisible: z.boolean().optional(),
   })
   .strict();
 

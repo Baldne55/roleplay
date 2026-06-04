@@ -9,13 +9,36 @@ const Chat = useChatStore();
 // Render the shell as long as there's anything to show or the input is
 // open. A freshly spawned player with zero messages sees nothing until
 // the first push lands (or they hit T).
+//
+// `Chat.ChatVisible` is the /toggle chat user-controlled gate: when off,
+// the overlay disappears entirely (the player chose to hide it). New
+// pushes still accumulate in the store so they reappear on /toggle chat
+// back on.
 const Visible = computed<boolean>(
-  () => Chat.Messages.length > 0 || Chat.InputActive,
+  () => Chat.ChatVisible && (Chat.Messages.length > 0 || Chat.InputActive),
 );
+
+// FontSize controls the chat overlay's relative font scaling. The store
+// holds it as a multiplier (default 0.65 keeps rough parity with the
+// legacy size); we feed it to CSS as a custom property so every nested
+// rule that uses `em` re-scales together.
+//
+// PageSize is the visible row count in the message list. The list's
+// max-height multiplies it by the scaled row height so /pagesize +
+// /fontsize compose correctly.
+const RootStyle = computed(() => ({
+  '--chat-font-scale': String(Chat.FontSize / 0.65),
+  '--chat-page-size': String(Chat.PageSize),
+}));
 </script>
 
 <template>
-  <section v-if="Visible" class="Chat-Root">
+  <section
+    v-if="Visible"
+    class="Chat-Root"
+    :class="{ 'Chat-Root--Blindfold': Chat.BlindfoldOn }"
+    :style="RootStyle"
+  >
     <MessageList />
     <InputBar v-if="Chat.InputActive" />
   </section>
@@ -27,7 +50,10 @@ const Visible = computed<boolean>(
   left: 1.2vw;
   top: 3vh;
   width: 38vw;
-  max-height: 40vh;
+  /* Safety ceiling so an extreme /pagesize + /fontsize combo cannot
+     overflow the viewport. The list's own max-height drives the
+     normal sizing. */
+  max-height: 60vh;
   display: flex;
   flex-direction: column;
   background: transparent;
@@ -42,5 +68,14 @@ const Visible = computed<boolean>(
      9999 keeps the chat surface above anything the SPA might float
      during in-world UX. */
   z-index: 9999;
+  /* /fontsize multiplier - 1 = default. CSS rules in this tree scale via
+     `calc(<base> * var(--chat-font-scale))`. */
+  --chat-font-scale: 1;
+}
+
+/* /toggle blindfold paints a solid black backdrop so chat is legible
+   against any in-world background (used for screenshots). */
+.Chat-Root--Blindfold {
+  background: #000000;
 }
 </style>

@@ -1,5 +1,6 @@
 import { NetEvents, type NetEventPayloads } from '@Shared/Events/NetEvents.js';
 import { NUIEvents } from '@Shared/Events/NUIEvents.js';
+import { NametagBagKeys } from '@Shared/Constants/Nametag.js';
 import { Logger } from '@/Util/Logger.js';
 import type { NuiService } from '@/Services/NuiService.js';
 
@@ -16,6 +17,9 @@ declare function RegisterKeyMapping(
   DefaultMapper: string,
   DefaultParameter: string,
 ): void;
+declare const LocalPlayer: {
+  state: { set: (Key: string, Value: unknown, Replicated: boolean) => void };
+};
 
 /**
  * Frontend bridge for chat. Three concerns:
@@ -58,6 +62,18 @@ export class ChatController {
       },
     );
 
+    onNet(
+      NetEvents.ChatSettingChanged,
+      (Payload: NetEventPayloads[typeof NetEvents.ChatSettingChanged]): void => {
+        // Server already resolved the new value (toggle flipped, fontsize/
+        // pagesize stored). Forward as-is; the SPA applies directly.
+        this.Nui.Send(NUIEvents.ChatSettingChanged, {
+          Key: Payload.Key,
+          Value: Payload.Value,
+        });
+      },
+    );
+
     onNet(NetEvents.CharacterSpawned, (): void => {
       this.IsSpawned = true;
     });
@@ -84,7 +100,17 @@ export class ChatController {
       // Keyboard-only focus - cursor stays hidden. Movement keys are
       // suppressed by the engine while NUI has keyboard focus, which is
       // what we want for chat input.
-      this.Nui.Focus(Data?.On === true, false);
+      const On = Data?.On === true;
+      this.Nui.Focus(On, false);
+      // Mirror the focus into the replicated IsTyping bag so remote
+      // clients can render the `[...]` typing indicator above this
+      // player's nametag. The bag flips off the moment focus drops, so
+      // the indicator never lingers past the actual input session.
+      try {
+        LocalPlayer.state.set(NametagBagKeys.IsTyping, On, true);
+      } catch {
+        // No state-bag surface in headless dev runs - silently ignore.
+      }
     });
 
     RegisterCommand(

@@ -169,6 +169,14 @@ export const NetEvents = {
    * UI sync write-back state without round-tripping a refetch.
    */
   SettingsPushed: 'Roleplay:Net:Settings:Pushed',
+
+  /**
+   * Server -> client. A /toggle / /fontsize / /pagesize command landed
+   * on the server side; the SPA flips or updates the corresponding
+   * local setting. Toggles carry no value (the SPA flips its own
+   * boolean); /fontsize and /pagesize carry the new numeric value.
+   */
+  ChatSettingChanged: 'Roleplay:Net:Chat:SettingChanged',
 } as const;
 
 export type NetEventName = (typeof NetEvents)[keyof typeof NetEvents];
@@ -255,5 +263,14 @@ export interface NetEventPayloads {
   };
   [NetEvents.SettingsPushed]: {
     Settings: AccountSettings;
+  };
+  [NetEvents.ChatSettingChanged]: {
+    /** Canonical key: `timestamp`, `chat`, `charactercounter`,
+     * `selfnametag`, `nametagid`, `blindfold`, `fontsize`, `pagesize`. */
+    Key: string;
+    /** Resolved value. Boolean for toggle settings; number for
+     * `fontsize` and `pagesize`. Server flipped the toggle and persisted
+     * before emitting so the client just applies the result directly. */
+    Value: boolean | number;
   };
 }

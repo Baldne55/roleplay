@@ -21,11 +21,16 @@ export interface ChatMessage {
   ID: number;
   Body: string;
   Segments: ChatSegment[];
+  /** Local-clock millisecond Date.now() captured when the line was
+   * received. Rendered as `[HH:MM:SS]` when TimestampVisible is on. */
+  ReceivedAt: number;
 }
 
 const MessageCap = 100;
 const HistoryCap = 100;
 const InputMaxLength = 240;
+const FontSizeDefault = 0.65;
+const PageSizeDefault = 20;
 
 export const useChatStore = defineStore('Chat', () => {
   const Messages = ref<ChatMessage[]>([]);
@@ -39,6 +44,29 @@ export const useChatStore = defineStore('Chat', () => {
    */
   const HistoryIndex = ref<number>(-1);
   let NextID = 1;
+
+  // ── Per-player chat UI knobs ─────────────────────────────────────
+  // Toggled by /toggle, /fontsize, /pagesize and pushed via the
+  // ChatSettingChanged net event. Local-only state; not persisted.
+  const TimestampVisible = ref<boolean>(false);
+  const ChatVisible = ref<boolean>(true);
+  const CharacterCounterVisible = ref<boolean>(true);
+  const BlindfoldOn = ref<boolean>(false);
+  const FontSize = ref<number>(FontSizeDefault);
+  const PageSize = ref<number>(PageSizeDefault);
+
+  /**
+   * Monotonic scroll-request counter. InputBar bumps it on PageUp /
+   * PageDown; MessageList watches and scrolls by `±PageSize` rows. A
+   * counter rather than a boolean so back-to-back PageUp presses all
+   * register even when the direction does not change.
+   */
+  const ScrollDirection = ref<-1 | 1>(-1);
+  const ScrollCounter = ref<number>(0);
+  function RequestScroll(Direction: -1 | 1): void {
+    ScrollDirection.value = Direction;
+    ScrollCounter.value += 1;
+  }
 
   const Suggestions = computed<CommandHint[]>(() => {
     const Raw = Input.value.trim();
@@ -70,10 +98,81 @@ export const useChatStore = defineStore('Chat', () => {
       ID: NextID++,
       Body,
       Segments: Parse(Body),
+      ReceivedAt: Date.now(),
     };
     Messages.value.push(Entry);
     while (Messages.value.length > MessageCap) {
       Messages.value.shift();
+    }
+  }
+
+  /**
+   * Apply a /toggle, /fontsize or /pagesize push from the server. The
+   * server pre-resolved the new value (flipping was done server-side so
+   * the persisted state matches), so we set directly rather than flip.
+   * Unknown keys are ignored so the server can introduce new keys
+   * without breaking older UI builds.
+   */
+  function ApplySetting(Key: string, Value: boolean | number): void {
+    switch (Key) {
+      case 'timestamp':
+        if (typeof Value === 'boolean') TimestampVisible.value = Value;
+        return;
+      case 'chat':
+        if (typeof Value === 'boolean') ChatVisible.value = Value;
+        return;
+      case 'charactercounter':
+        if (typeof Value === 'boolean') CharacterCounterVisible.value = Value;
+        return;
+      case 'blindfold':
+        if (typeof Value === 'boolean') BlindfoldOn.value = Value;
+        return;
+      case 'fontsize':
+        if (typeof Value === 'number' && Number.isFinite(Value)) {
+          FontSize.value = Value;
+        }
+        return;
+      case 'pagesize':
+        if (typeof Value === 'number' && Number.isFinite(Value)) {
+          PageSize.value = Value;
+        }
+        return;
+      default:
+        // selfnametag / nametagid land here today; no overlay yet.
+        return;
+    }
+  }
+
+  /**
+   * Bulk-apply chat-related settings from an AccountSettings hydrate.
+   * Used by the Settings store on AuthCompleted so the UI is in its
+   * persisted state before the first message lands.
+   */
+  function HydrateFrom(Settings: {
+    ChatTimestamp?: boolean;
+    ChatVisible?: boolean;
+    ChatCharacterCounter?: boolean;
+    ChatBlindfold?: boolean;
+    ChatFontSize?: number;
+    ChatPageSize?: number;
+  }): void {
+    if (typeof Settings.ChatTimestamp === 'boolean') {
+      TimestampVisible.value = Settings.ChatTimestamp;
+    }
+    if (typeof Settings.ChatVisible === 'boolean') {
+      ChatVisible.value = Settings.ChatVisible;
+    }
+    if (typeof Settings.ChatCharacterCounter === 'boolean') {
+      CharacterCounterVisible.value = Settings.ChatCharacterCounter;
+    }
+    if (typeof Settings.ChatBlindfold === 'boolean') {
+      BlindfoldOn.value = Settings.ChatBlindfold;
+    }
+    if (typeof Settings.ChatFontSize === 'number') {
+      FontSize.value = Settings.ChatFontSize;
+    }
+    if (typeof Settings.ChatPageSize === 'number') {
+      PageSize.value = Settings.ChatPageSize;
     }
   }
 
@@ -121,20 +220,35 @@ export const useChatStore = defineStore('Chat', () => {
 
   /**
    * Step = -1 navigates to older history (Up key); +1 newer (Down).
-   * No-op when History is empty.
+   *
+   *   - Up from a live (non-history) input -> most recent submission.
+   *     Down from a live input is a no-op (you can't go newer than
+   *     fresh).
+   *   - Stepping past the newest entry exits history mode and empties
+   *     the input - the player is back in "fresh typing" mode and
+   *     suggestions can take over again.
+   *   - Up at the oldest entry clamps in place.
+   *
+   * Matches the bash / readline convention every player has muscle
+   * memory for. No-op when History is empty.
    */
   function NavigateHistory(Step: -1 | 1): void {
     if (History.value.length === 0) return;
     if (HistoryIndex.value === -1) {
-      // Entering history from a live input - jump to the most recent or
-      // oldest depending on direction.
-      HistoryIndex.value = Step === -1 ? History.value.length - 1 : 0;
-    } else {
-      HistoryIndex.value = Math.max(
-        0,
-        Math.min(History.value.length - 1, HistoryIndex.value + Step),
-      );
+      if (Step === 1) return; // Down from fresh input: nothing newer to recall.
+      HistoryIndex.value = History.value.length - 1;
+      Input.value = History.value[HistoryIndex.value] ?? '';
+      return;
     }
+    const Next = HistoryIndex.value + Step;
+    if (Next > History.value.length - 1) {
+      // Down past the newest entry: drop out of history mode, blank
+      // the buffer so the next Down is a no-op.
+      HistoryIndex.value = -1;
+      Input.value = '';
+      return;
+    }
+    HistoryIndex.value = Math.max(0, Next);
     Input.value = History.value[HistoryIndex.value] ?? '';
   }
 
@@ -151,6 +265,14 @@ export const useChatStore = defineStore('Chat', () => {
     HistoryIndex,
     Suggestions,
     InputMaxLength,
+    TimestampVisible,
+    ChatVisible,
+    CharacterCounterVisible,
+    BlindfoldOn,
+    FontSize,
+    PageSize,
+    ScrollDirection,
+    ScrollCounter,
     Push,
     Clear,
     ShowInput,
@@ -158,5 +280,8 @@ export const useChatStore = defineStore('Chat', () => {
     Submit,
     NavigateHistory,
     SetCommands,
+    ApplySetting,
+    HydrateFrom,
+    RequestScroll,
   };
 });

@@ -77,6 +77,15 @@ function ApplySuggestion(): void {
 }
 
 function HandleUp(): void {
+  // Once the player has stepped into history mode (a recall is on
+  // screen) arrow keys keep navigating history regardless of whether
+  // the recalled string starts with `/` and triggers the suggestion
+  // box - otherwise UP would silently flip to scrolling suggestions
+  // after the first recall.
+  if (Chat.HistoryIndex !== -1) {
+    Chat.NavigateHistory(-1);
+    return;
+  }
   if (Chat.Suggestions.length > 0) {
     HighlightIndex.value = Math.max(0, HighlightIndex.value - 1);
     return;
@@ -85,11 +94,23 @@ function HandleUp(): void {
 }
 
 function HandleDown(): void {
+  if (Chat.HistoryIndex !== -1) {
+    Chat.NavigateHistory(1);
+    return;
+  }
   if (Chat.Suggestions.length > 0) {
     HighlightIndex.value = Math.min(Chat.Suggestions.length - 1, HighlightIndex.value + 1);
     return;
   }
   Chat.NavigateHistory(1);
+}
+
+function HandlePageUp(): void {
+  Chat.RequestScroll(-1);
+}
+
+function HandlePageDown(): void {
+  Chat.RequestScroll(1);
 }
 </script>
 
@@ -111,8 +132,14 @@ function HandleDown(): void {
         @keydown.tab.prevent="HandleTab"
         @keydown.up.prevent="HandleUp"
         @keydown.down.prevent="HandleDown"
+        @keydown.page-up.prevent="HandlePageUp"
+        @keydown.page-down.prevent="HandlePageDown"
       />
-      <span class="Chat-Counter" :class="{ Low: RemainingChars < 30 }">
+      <span
+        v-if="Chat.CharacterCounterVisible"
+        class="Chat-Counter"
+        :class="{ Low: RemainingChars < 30 }"
+      >
         {{ RemainingChars }}
       </span>
     </div>

@@ -146,6 +146,12 @@ export const NUIEvents = {
    * (server echo). UI store overwrites its state on every push.
    */
   SettingsHydrate: 'Roleplay:NUI:Settings:Hydrate',
+
+  /**
+   * Frontend -> UI. Server-side /toggle / /fontsize / /pagesize
+   * command landed; SPA flips or updates the matching chat-UI knob.
+   */
+  ChatSettingChanged: 'Roleplay:NUI:Chat:SettingChanged',
 } as const;
 
 export type NUIEventName = (typeof NUIEvents)[keyof typeof NUIEvents];
@@ -234,6 +240,11 @@ export interface NUIEventPayloads {
   [NUIEvents.SettingsHydrate]: {
     Type: typeof NUIEvents.SettingsHydrate;
     Settings: AccountSettings;
+  };
+  [NUIEvents.ChatSettingChanged]: {
+    Type: typeof NUIEvents.ChatSettingChanged;
+    Key: string;
+    Value: boolean | number;
   };
 }
 

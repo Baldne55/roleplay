@@ -1,4 +1,5 @@
 import { ChatColor } from './ChatPalette.js';
+import { ChatVerbs, type ChatType } from './ChatConstants.js';
 
 /**
  * Build chat token strings for the canonical v2 format. Mirrors lc-rp's
@@ -119,4 +120,78 @@ export function Footer(Color: string = ChatColor.Header): string {
 
 export function Divider(Color: string = ChatColor.Header): string {
   return Footer(Color);
+}
+
+// ── IC/OOC chat lines ─────────────────────────────────────────────────
+//
+// Each helper builds one fully-formed token string ready to hand to the
+// proximity broadcaster. Names arrive resolved (mask-aware) from the
+// caller; these helpers do not look anything up.
+
+/**
+ * Apply a speech channel's full-line tint to an already-built text. /say
+ * and /shout stay white; /low wraps in SpeechLow light gray; /whisper
+ * wraps in SpeechQuiet pale orange.
+ *
+ * Exposed so directed-speech and any future channel-shaped formatter
+ * can reuse the same per-channel tint policy without re-stating it.
+ */
+export function ApplyChannelTint(Text: string, Type: ChatType): string {
+  switch (Type) {
+    case 'Say':
+    case 'Shout':
+      return Text;
+    case 'Low':
+      return `!{${ChatColor.SpeechLow}}${Text}!{${ChatColor.White}}`;
+    case 'Whisper':
+      return `!{${ChatColor.SpeechQuiet}}${Text}!{${ChatColor.White}}`;
+    case 'Ooc':
+      return Text;
+  }
+}
+
+/**
+ * Speech line for /say, /shout, /whisper, /low. The text is
+ * `<Name> <verb>: <Body>`, then the channel tint wraps the whole thing.
+ */
+export function Speech(Name: string, Body: string, Type: ChatType): string {
+  return ApplyChannelTint(`${Name} ${ChatVerbs[Type]}: ${Body}`, Type);
+}
+
+/** `* <Name> <action>` rendered in RP purple. */
+export function MeAction(Name: string, Action: string): string {
+  return `!{${ChatColor.RP}}* ${Name} ${Action}!{${ChatColor.White}}`;
+}
+
+/** `* <description> (( <Name> )) *` rendered in RP purple. */
+export function DoAction(Description: string, Name: string): string {
+  return `!{${ChatColor.RP}}* ${Description} (( ${Name} )) *!{${ChatColor.White}}`;
+}
+
+/** `* <Name>'s <description>` rendered in RP purple. */
+export function MyAction(Name: string, Description: string): string {
+  return `!{${ChatColor.RP}}* ${Name}'s ${Description}!{${ChatColor.White}}`;
+}
+
+/** `(( <Name>: <body> ))` for /b local OOC, rendered in OOC blue. */
+export function LocalOoc(Name: string, Body: string): string {
+  return `!{${ChatColor.OOC}}(( ${Name}: ${Body} ))!{${ChatColor.White}}`;
+}
+
+/**
+ * `(( PM to <Name>: <body> ))` shown to the sender after a /pm.
+ *
+ * Source ID deliberately not echoed. Name is the mask-aware DisplayName,
+ * so a masked recipient appears as `Mask <MaskID>`. Pairing the Source ID
+ * with a masked name would correlate the mask to its wearer across
+ * encounters - exactly the metagame surface this slice guards against.
+ */
+export function PmTo(RecipientName: string, Body: string): string {
+  return `!{${ChatColor.Highlight}}(( PM to ${RecipientName}: ${Body} ))!{${ChatColor.White}}`;
+}
+
+/** `(( PM from <Name>: <body> ))` shown to the recipient. Same metagame
+ * reasoning as PmTo - no Source ID echoed. */
+export function PmFrom(SenderName: string, Body: string): string {
+  return `!{${ChatColor.Highlight}}(( PM from ${SenderName}: ${Body} ))!{${ChatColor.White}}`;
 }

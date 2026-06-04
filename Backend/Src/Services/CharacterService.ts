@@ -19,6 +19,7 @@ import {
   type Gender,
 } from '@Shared/Constants/Character.js';
 import { ClothingCategories, DefaultOutfitData, type OutfitData } from '@Shared/Constants/Outfit.js';
+import { MinorAgeThreshold } from '@Shared/Constants/Nametag.js';
 import type { Sequelize } from 'sequelize-typescript';
 import { Logger } from '@/Util/Logger.js';
 import type { Character } from '@/Data/Models/Character.js';
@@ -244,7 +245,12 @@ export class CharacterService {
     // playerDropped flushes it via SaveRuntime.
     const Runtime: CharacterRuntime = {
       CharacterID: String(Row.ID),
+      FirstName: Row.FirstName,
+      LastName: Row.LastName,
+      MaskID: Row.MaskID,
       IsMasked: Row.IsMasked,
+      BirthDate: Row.BirthDate,
+      IsMinor: AgeFromBirthDate(Row.BirthDate) < MinorAgeThreshold,
       Cash: Row.Cash,
       Bank: Row.Bank,
       InjuryStatus: Row.InjuryStatus,
@@ -419,6 +425,32 @@ function AssertOutfit(Outfit: unknown): void {
       throw new CharacterCreateError(`Outfit "${Category.Id}" texture is out of range.`);
     }
   }
+}
+
+/**
+ * Inverse of DeriveBirthDate. Reads a stored ISO YYYY-MM-DD date and
+ * returns the integer age in whole years, accounting for whether
+ * today is before or after the birthday this year. Used at runtime
+ * attach to derive IsMinor (< 18) once per session.
+ */
+function AgeFromBirthDate(BirthDate: string): number {
+  const Today = new Date();
+  const Parts = BirthDate.split('-');
+  const Y = Number(Parts[0]);
+  const M = Number(Parts[1]);
+  const D = Number(Parts[2]);
+  if (!Number.isFinite(Y) || !Number.isFinite(M) || !Number.isFinite(D)) {
+    // Malformed row - treat as adult (the safer default for legal /
+    // mature-content gates) so a corrupt date can't accidentally flag
+    // an adult character as minor.
+    return MinorAgeThreshold;
+  }
+  let Age = Today.getUTCFullYear() - Y;
+  const MonthDiff = Today.getUTCMonth() + 1 - M;
+  if (MonthDiff < 0 || (MonthDiff === 0 && Today.getUTCDate() < D)) {
+    Age -= 1;
+  }
+  return Age;
 }
 
 /**

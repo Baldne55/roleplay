@@ -1,5 +1,6 @@
 import { NetEvents, type NetEventPayloads } from '@Shared/Events/NetEvents.js';
 import { ResolveAccountSettings } from '@Shared/Constants/AccountSettings.js';
+import { NametagBagKeys } from '@Shared/Constants/Nametag.js';
 import { Logger } from '@/Util/Logger.js';
 import type { PlayerStateService } from '@/Services/PlayerStateService.js';
 import type { AccountSessionService } from '@/Services/AccountSessionService.js';
@@ -11,6 +12,9 @@ declare const source: number;
 declare function on<T extends (...Args: never[]) => void>(EventName: string, Callback: T): void;
 declare function onNet<T extends (...Args: never[]) => void>(EventName: string, Callback: T): void;
 declare function emitNet(EventName: string, Target: number, ...Args: unknown[]): void;
+declare function Player(Source: number | string): {
+  state: { set: (Key: string, Value: unknown, Replicated: boolean) => void };
+};
 
 /**
  * Finalisation step.
@@ -79,13 +83,33 @@ export class AuthController {
 
       const Existing = await this.Characters.ListByAccount(PlayerState.AccountID);
 
+      const ResolvedSettings = ResolveAccountSettings(Account.Settings);
+      // Mirror the local-only nametag preferences into LocalPlayer state
+      // bag so the Frontend NametagController can read them every frame
+      // without a round-trip through the SPA. Done here (Authenticated
+      // phase) so the values are in place before CharacterSpawned fires.
+      try {
+        Player(Src).state.set(
+          NametagBagKeys.SelfVisible,
+          ResolvedSettings.NametagSelfVisible,
+          true,
+        );
+        Player(Src).state.set(
+          NametagBagKeys.IDVisible,
+          ResolvedSettings.NametagIDVisible,
+          true,
+        );
+      } catch (Err: unknown) {
+        this.Log.Warn(`Nametag bag seed failed for source=${Src}`, { Err: String(Err) });
+      }
+
       const Payload: NetEventPayloads[typeof NetEvents.AuthSuccess] = {
         DiscordDisplayName: Account.DiscordDisplayName ?? 'friend',
         DiscordAvatarURL: AvatarURL,
         HasCharacters: Existing.length > 0,
         // Resolved (defaults-merged) so the SPA receives a fully
         // populated object - no client-side default-filling needed.
-        Settings: ResolveAccountSettings(Account.Settings),
+        Settings: ResolvedSettings,
       };
       emitNet(NetEvents.AuthSuccess, Src, Payload);
       this.Log.Debug(

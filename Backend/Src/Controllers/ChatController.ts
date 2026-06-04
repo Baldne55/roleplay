@@ -150,16 +150,13 @@ export class ChatController {
       return;
     }
 
-    if (Body[0] !== '/') {
-      // Plain text without a leading slash has nowhere to go yet - the
-      // /say slice flips this into a proximity broadcast. For now we
-      // surface the same hint every time.
-      this.Chat.SendTo(Src, ChatFormatter.Info('No chat channel selected. Try /help.'));
-      return;
-    }
-
+    // Default IC channel is /say. Plain text without a leading slash is
+    // routed through the same dispatcher path as `/say <body>` so the
+    // registry remains the single owner of broadcast (permission gate,
+    // cooldown stamping, rate-limit accounting, formatter selection).
+    const Dispatched = Body[0] === '/' ? Body : `/say ${Body}`;
     try {
-      const Result = await this.Registry.Dispatch(Src, Body);
+      const Result = await this.Registry.Dispatch(Src, Dispatched);
       this.RenderOutcome(Src, Result);
     } catch (Err: unknown) {
       this.Log.Error(`Dispatch threw for source=${Src}`, { Err: String(Err) });

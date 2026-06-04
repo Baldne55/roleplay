@@ -22,6 +22,26 @@ export const ThemeModes: readonly ThemeMode[] = ['Light', 'Dark', 'System'];
 export interface AccountSettings {
   /** Light / Dark / System (follows OS prefers-color-scheme). */
   ThemeMode?: ThemeMode;
+  /** Render `[HH:MM:SS]` prefix on every chat row. (/toggle timestamp) */
+  ChatTimestamp?: boolean;
+  /** Show the chat overlay at all. (/toggle chat) */
+  ChatVisible?: boolean;
+  /** Show the remaining-character counter in the input bar.
+   *  (/toggle charactercounter, alias /toggle counter) */
+  ChatCharacterCounter?: boolean;
+  /** Paint a solid black backdrop behind chat for screenshots.
+   *  (/toggle blindfold) */
+  ChatBlindfold?: boolean;
+  /** Chat font scale multiplier (0.5 - 1.5). (/fontsize <value>) */
+  ChatFontSize?: number;
+  /** Visible row count in the chat overlay (5 - 40). (/pagesize <value>) */
+  ChatPageSize?: number;
+  /** Render your own nametag above your own ped. (/toggle selfnametag,
+   *  alias /toggle selftag) */
+  NametagSelfVisible?: boolean;
+  /** Show the `(<source-id>)` suffix on every nametag. (/toggle
+   *  nametagid, alias /toggle tagid) */
+  NametagIDVisible?: boolean;
 }
 
 /**
@@ -31,6 +51,14 @@ export interface AccountSettings {
  */
 export const DefaultAccountSettings: Required<AccountSettings> = {
   ThemeMode: 'System',
+  ChatTimestamp: false,
+  ChatVisible: true,
+  ChatCharacterCounter: true,
+  ChatBlindfold: false,
+  ChatFontSize: 0.65,
+  ChatPageSize: 20,
+  NametagSelfVisible: false,
+  NametagIDVisible: true,
 };
 
 /**
