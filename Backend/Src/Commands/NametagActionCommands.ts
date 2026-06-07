@@ -2,6 +2,8 @@ import { ChatColor } from '@Shared/Chat/Index.js';
 import type { CommandBeforeRun, CommandResult } from '@/Services/CommandTypes.js';
 import { CommandRegistry } from '@/Services/CommandRegistry.js';
 import type { ProximityBroadcaster } from '@/Services/ProximityBroadcaster.js';
+import type { CharacterRuntimeService } from '@/Services/CharacterRuntimeService.js';
+import { AssertHealthy, ChainBeforeRun } from '@/Commands/Shared/AssertHealthy.js';
 import { Logger } from '@/Util/Logger.js';
 
 declare function Player(Source: number | string): {
@@ -32,12 +34,14 @@ let HandlersRegistered = false;
 export function Register(
   Registry: CommandRegistry,
   Broadcaster: ProximityBroadcaster,
+  Runtimes: CharacterRuntimeService,
 ): void {
   EnsureHandlers();
 
   RegisterNametagAction(
     Registry,
     Broadcaster,
+    Runtimes,
     'ame',
     'Set a roleplay action displayed above your nametag.',
     'Possessive',
@@ -47,6 +51,7 @@ export function Register(
   RegisterNametagAction(
     Registry,
     Broadcaster,
+    Runtimes,
     'amy',
     'Set a possessive roleplay action displayed above your nametag.',
     'Possessive',
@@ -78,6 +83,7 @@ export function OnPlayerDropped(Source: number): void {
 function RegisterNametagAction(
   Registry: CommandRegistry,
   Broadcaster: ProximityBroadcaster,
+  Runtimes: CharacterRuntimeService,
   Name: string,
   Description: string,
   _Tag: 'Plain' | 'Possessive',
@@ -89,7 +95,7 @@ function RegisterNametagAction(
     Params: '<action>',
     Category: 'RP',
     RequireCharacter: true,
-    BeforeRun: AssertNonEmptyBody(Name),
+    BeforeRun: ChainBeforeRun(AssertHealthy(Runtimes), AssertNonEmptyBody(Name)),
     Run: (Ctx): CommandResult => {
       const Body = Ctx.Args.join(' ').trim();
       const DisplayName = Broadcaster.DisplayName(Ctx.Source) ?? 'Someone';

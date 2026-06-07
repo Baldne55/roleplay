@@ -2,6 +2,8 @@ import { ChatFormatter, ChatRanges, type ChatType } from '@Shared/Chat/Index.js'
 import type { CommandBeforeRun, CommandResult } from '@/Services/CommandTypes.js';
 import { CommandRegistry } from '@/Services/CommandRegistry.js';
 import type { ProximityBroadcaster } from '@/Services/ProximityBroadcaster.js';
+import type { CharacterRuntimeService } from '@/Services/CharacterRuntimeService.js';
+import { AssertHealthy, ChainBeforeRun } from '@/Commands/Shared/AssertHealthy.js';
 
 /**
  * Roleplay action commands - the /me /do /my surface, each in three range
@@ -22,18 +24,19 @@ type FormatterTag = 'Me' | 'Do' | 'My';
 export function Register(
   Registry: CommandRegistry,
   Broadcaster: ProximityBroadcaster,
+  Runtimes: CharacterRuntimeService,
 ): void {
-  RegisterAction(Registry, Broadcaster, 'me', 'Perform a roleplay action (10 m).', '<action>', 'Say', 'Me');
-  RegisterAction(Registry, Broadcaster, 'melow', 'Perform a roleplay action in low voice (5 m).', '<action>', 'Low', 'Me');
-  RegisterAction(Registry, Broadcaster, 'melong', 'Perform a roleplay action with extended range (25 m).', '<action>', 'Shout', 'Me');
+  RegisterAction(Registry, Broadcaster, Runtimes, 'me', 'Perform a roleplay action (10 m).', '<action>', 'Say', 'Me');
+  RegisterAction(Registry, Broadcaster, Runtimes, 'melow', 'Perform a roleplay action in low voice (5 m).', '<action>', 'Low', 'Me');
+  RegisterAction(Registry, Broadcaster, Runtimes, 'melong', 'Perform a roleplay action with extended range (25 m).', '<action>', 'Shout', 'Me');
 
-  RegisterAction(Registry, Broadcaster, 'do', 'Describe an environment or scene action (10 m).', '<description>', 'Say', 'Do');
-  RegisterAction(Registry, Broadcaster, 'dolow', 'Describe an environment or scene action in low voice (5 m).', '<description>', 'Low', 'Do');
-  RegisterAction(Registry, Broadcaster, 'dolong', 'Describe an environment or scene action with extended range (25 m).', '<description>', 'Shout', 'Do');
+  RegisterAction(Registry, Broadcaster, Runtimes, 'do', 'Describe an environment or scene action (10 m).', '<description>', 'Say', 'Do');
+  RegisterAction(Registry, Broadcaster, Runtimes, 'dolow', 'Describe an environment or scene action in low voice (5 m).', '<description>', 'Low', 'Do');
+  RegisterAction(Registry, Broadcaster, Runtimes, 'dolong', 'Describe an environment or scene action with extended range (25 m).', '<description>', 'Shout', 'Do');
 
-  RegisterAction(Registry, Broadcaster, 'my', 'Describe something about your character (10 m).', '<description>', 'Say', 'My');
-  RegisterAction(Registry, Broadcaster, 'mylow', 'Describe something about your character in low voice (5 m).', '<description>', 'Low', 'My');
-  RegisterAction(Registry, Broadcaster, 'mylong', 'Describe something about your character with extended range (25 m).', '<description>', 'Shout', 'My');
+  RegisterAction(Registry, Broadcaster, Runtimes, 'my', 'Describe something about your character (10 m).', '<description>', 'Say', 'My');
+  RegisterAction(Registry, Broadcaster, Runtimes, 'mylow', 'Describe something about your character in low voice (5 m).', '<description>', 'Low', 'My');
+  RegisterAction(Registry, Broadcaster, Runtimes, 'mylong', 'Describe something about your character with extended range (25 m).', '<description>', 'Shout', 'My');
 }
 
 /**
@@ -44,6 +47,7 @@ export function Register(
 function RegisterAction(
   Registry: CommandRegistry,
   Broadcaster: ProximityBroadcaster,
+  Runtimes: CharacterRuntimeService,
   Name: string,
   Description: string,
   Params: string,
@@ -56,7 +60,7 @@ function RegisterAction(
     Params,
     Category: 'RP',
     RequireCharacter: true,
-    BeforeRun: AssertNonEmptyBody(Name, Params),
+    BeforeRun: ChainBeforeRun(AssertHealthy(Runtimes), AssertNonEmptyBody(Name, Params)),
     Run: (Ctx): CommandResult => {
       const Body = Ctx.Args.join(' ').trim();
       const DisplayName = Broadcaster.DisplayName(Ctx.Source) ?? 'Someone';

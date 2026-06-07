@@ -137,6 +137,32 @@ export class PositionValidatorService {
     Entry.GraceUntilMs = Now + 2000;
   }
 
+  /**
+   * Indefinitely waive the delta check for this Source. The Tick still
+   * walks the entry and refreshes Last / Heading / World from natives;
+   * only the threshold gate is bypassed. Use for server-driven mobility
+   * modes that move the ped faster than any vehicle - /noclip today,
+   * future cinematic-cam / spectate flows tomorrow.
+   */
+  Suspend(Source: number): void {
+    const Entry = this.Cache.get(Source);
+    if (Entry === undefined) return;
+    Entry.GraceUntilMs = Number.MAX_SAFE_INTEGER;
+    this.Log.Debug(`Suspended source=${Source}`);
+  }
+
+  /**
+   * End a Suspend window. The standard 2-second grace fires so the next
+   * tick after Resume does not trip on a queued-up native coord that
+   * was already authoritative while Suspended.
+   */
+  Resume(Source: number): void {
+    const Entry = this.Cache.get(Source);
+    if (Entry === undefined) return;
+    Entry.GraceUntilMs = Date.now() + 2000;
+    this.Log.Debug(`Resumed source=${Source}`);
+  }
+
   private Tick(): void {
     const Now = Date.now();
     for (const [Source, Entry] of this.Cache.entries()) {

@@ -11,6 +11,8 @@ import type { ChatService } from '@/Services/ChatService.js';
 import type { PlayerStateService } from '@/Services/PlayerStateService.js';
 import type { ProximityBroadcaster } from '@/Services/ProximityBroadcaster.js';
 import type { AccountRepository } from '@/Data/Repositories/AccountRepository.js';
+import type { CharacterRuntimeService } from '@/Services/CharacterRuntimeService.js';
+import { AssertHealthy, ChainBeforeRun } from '@/Commands/Shared/AssertHealthy.js';
 
 /**
  * Directed-speech commands - /to, /shoutto, /wto. The sender addresses a
@@ -32,6 +34,7 @@ export function Register(
   State: PlayerStateService,
   Broadcaster: ProximityBroadcaster,
   Accounts: AccountRepository,
+  Runtimes: CharacterRuntimeService,
 ): void {
   RegisterDirected(
     Registry,
@@ -39,6 +42,7 @@ export function Register(
     State,
     Broadcaster,
     Accounts,
+    Runtimes,
     'to',
     ['sayto'],
     'Say something directed at a nearby player (10 m).',
@@ -50,6 +54,7 @@ export function Register(
     State,
     Broadcaster,
     Accounts,
+    Runtimes,
     'shoutto',
     ['sto'],
     'Shout directed at a nearby player (25 m).',
@@ -61,6 +66,7 @@ export function Register(
     State,
     Broadcaster,
     Accounts,
+    Runtimes,
     'wto',
     [],
     'Whisper directly to a nearby player (3 m).',
@@ -84,6 +90,7 @@ function RegisterDirected(
   State: PlayerStateService,
   Broadcaster: ProximityBroadcaster,
   Accounts: AccountRepository,
+  Runtimes: CharacterRuntimeService,
   Name: string,
   Aliases: readonly string[],
   Description: string,
@@ -96,7 +103,7 @@ function RegisterDirected(
     Params: '<player_id> <message>',
     Category: 'Chat',
     RequireCharacter: true,
-    BeforeRun: AssertDirectedArgs(Name),
+    BeforeRun: ChainBeforeRun(AssertHealthy(Runtimes), AssertDirectedArgs(Name)),
     Run: async (Ctx): Promise<CommandResult> => {
       const Target = Number(Ctx.Args[0]);
       if (!Number.isInteger(Target)) {

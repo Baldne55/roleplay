@@ -9,6 +9,8 @@ import { ChatController } from '@/Controllers/ChatController.js';
 import { NametagController } from '@/Controllers/NametagController.js';
 import { SessionController } from '@/Controllers/SessionController.js';
 import { SettingsController } from '@/Controllers/SettingsController.js';
+import { InjuryController } from '@/Controllers/InjuryController.js';
+import { NoClipController } from '@/Controllers/NoClipController.js';
 
 const Log = Logger.New('Bootstrap');
 
@@ -25,11 +27,15 @@ const _Chat = new ChatController(Nui);
 const _Nametag = new NametagController();
 const _Session = new SessionController(Spawn, Nui);
 const _Settings = new SettingsController(Nui);
+const _Injury = new InjuryController();
+const _NoClip = new NoClipController();
 void _Auth;
 void _Character;
 void _Chat;
 void _Nametag;
 void _Session;
 void _Settings;
+void _Injury;
+void _NoClip;
 
 Log.Info('Frontend ready.');

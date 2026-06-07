@@ -23,6 +23,7 @@ import { ChatService } from '@/Services/ChatService.js';
 import { ChatRateLimiter } from '@/Services/ChatRateLimiter.js';
 import { ProximityBroadcaster } from '@/Services/ProximityBroadcaster.js';
 import { PrivateMessageStore } from '@/Services/PrivateMessageStore.js';
+import { InjuryService } from '@/Services/InjuryService.js';
 import { AccountSettingsService } from '@/Services/AccountSettingsService.js';
 import { PlayerSessionService } from '@/Services/PlayerSessionService.js';
 import * as CoreCommands from '@/Commands/CoreCommands.js';
@@ -38,12 +39,15 @@ import * as GlobalOocCommand from '@/Commands/GlobalOocCommand.js';
 import * as ChatUtilityCommands from '@/Commands/ChatUtilityCommands.js';
 import * as AdminDutyCommands from '@/Commands/AdminDutyCommands.js';
 import * as RandomCommands from '@/Commands/RandomCommands.js';
+import * as InjuryCommands from '@/Commands/InjuryCommands.js';
+import * as NoClipCommand from '@/Commands/NoClipCommand.js';
 import { ConnectionController } from '@/Controllers/ConnectionController.js';
 import { AccountController } from '@/Controllers/AccountController.js';
 import { AuthController } from '@/Controllers/AuthController.js';
 import { CharacterController } from '@/Controllers/CharacterController.js';
 import { ChatController } from '@/Controllers/ChatController.js';
 import { SettingsController } from '@/Controllers/SettingsController.js';
+import { InjuryController } from '@/Controllers/InjuryController.js';
 
 declare function RegisterCommand(
   Name: string,
@@ -108,17 +112,26 @@ RegisterCommand(
 // after Chat exists.
 const Broadcaster = new ProximityBroadcaster(State, Runtimes, Chat);
 const PmStore = new PrivateMessageStore();
-SpeechCommands.Register(Commands, Broadcaster);
-DirectedSpeechCommands.Register(Commands, Chat, State, Broadcaster, Accounts);
-RoleplayActionCommands.Register(Commands, Broadcaster);
-NametagActionCommands.Register(Commands, Broadcaster);
+// InjuryService sits alongside the chat broadcaster: every state
+// transition narrates through Broadcaster + ChatFormatter, and the
+// IC-channel commands now consult Runtimes via AssertHealthy so an
+// incapacitated character can not speak. Constructed before the
+// IC command registrations so the gate is in place from the first
+// /say onwards.
+const Injury = new InjuryService(State, Runtimes, Characters, Broadcaster, Chat, Validator);
+SpeechCommands.Register(Commands, Broadcaster, Runtimes);
+DirectedSpeechCommands.Register(Commands, Chat, State, Broadcaster, Accounts, Runtimes);
+RoleplayActionCommands.Register(Commands, Broadcaster, Runtimes);
+NametagActionCommands.Register(Commands, Broadcaster, Runtimes);
 PrivateMessageCommands.Register(Commands, Chat, State, Broadcaster, PmStore, Accounts);
 LookupCommands.Register(Commands, State, Broadcaster);
-VehicleChatCommands.Register(Commands, Chat, State, Broadcaster);
+VehicleChatCommands.Register(Commands, Chat, State, Broadcaster, Runtimes);
 GlobalOocCommand.Register(Commands, Chat, Broadcaster);
 ChatUtilityCommands.Register(Commands, Chat, Settings);
 AdminDutyCommands.Register(Commands, State, Accounts, Broadcaster);
 RandomCommands.Register(Commands, Broadcaster);
+InjuryCommands.Register(Commands, Injury, State, Broadcaster, Chat, Accounts);
+NoClipCommand.Register(Commands, Validator);
 Log.Info(`IC/OOC commands registered - ${Commands.Size} command(s) total`);
 
 const Http = new HttpRouter();
@@ -138,11 +151,13 @@ const _Character = new CharacterController(
   Validator,
   Characters,
   _Chat,
+  Injury,
 );
 const _Connection = new ConnectionController(Queue);
 const _Account = new AccountController(State, Routing, Discord, AccountSvc, Chat, Config);
 const _Auth = new AuthController(State, Sessions, Accounts, Characters, Discord);
 const _Settings = new SettingsController(State, Settings);
+const _Injury = new InjuryController(State, Injury);
 
 // PlayerSessionService bundles the mid-session "exit world" transitions
 // (/changecharacter, /logout). Registers AFTER CharacterController so it
@@ -160,6 +175,7 @@ void _Character;
 void _Chat;
 void _Settings;
 void Session;
+void _Injury;
 
 Http.Mount();
 

@@ -132,6 +132,48 @@ export class CharacterRepository {
     );
   }
 
+  /**
+   * Persist an injury-state transition immediately. Separate from
+   * SaveRuntime so the injury layer can flush each Healthy ->
+   * Unconscious -> BadlyWounded -> Dead step the moment it lands,
+   * rather than waiting for `playerDropped`. A server crash 30 s after
+   * a player enters BadlyWounded would otherwise roll them back to
+   * Healthy on restart.
+   *
+   * Position is optional: lethal-damage transitions snapshot the death
+   * site so the body stays where it fell (ragemp pattern); `/arevive`
+   * passes the issuer-resolved position; `/acceptdeath` passes the
+   * nearest hospital. When Position is omitted the existing columns
+   * stay put.
+   */
+  async SaveInjury(
+    ID: string,
+    Fields: {
+      InjuryStatus: Character['InjuryStatus'];
+      BleedingStatus: Character['BleedingStatus'];
+      HP: number;
+      Position?: { X: number; Y: number; Z: number; Heading?: number; World?: number };
+    },
+  ): Promise<void> {
+    const Update: Record<string, unknown> = {
+      InjuryStatus: Fields.InjuryStatus,
+      BleedingStatus: Fields.BleedingStatus,
+      HP: Fields.HP,
+    };
+    if (Fields.Position !== undefined) {
+      Update.PositionX = Fields.Position.X.toFixed(3);
+      Update.PositionY = Fields.Position.Y.toFixed(3);
+      Update.PositionZ = Fields.Position.Z.toFixed(3);
+      if (Fields.Position.Heading !== undefined) {
+        Update.Heading = Fields.Position.Heading.toFixed(3);
+      }
+      if (Fields.Position.World !== undefined) {
+        Update.World = Fields.Position.World;
+      }
+    }
+    await Character.update(Update, { where: { ID } });
+  }
+
   SoftDelete(ID: string): Promise<[number]> {
     return Character.update(
       { Status: 'Deleted', DeletedAt: new Date() },

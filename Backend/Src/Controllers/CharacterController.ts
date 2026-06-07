@@ -14,6 +14,7 @@ import type {
 } from '@/Services/PositionValidatorService.js';
 import type { CharacterRepository } from '@/Data/Repositories/CharacterRepository.js';
 import type { ChatController } from '@/Controllers/ChatController.js';
+import type { InjuryService } from '@/Services/InjuryService.js';
 
 declare const source: number;
 declare function on<T extends (...Args: never[]) => void>(EventName: string, Callback: T): void;
@@ -69,6 +70,7 @@ export class CharacterController {
     private readonly Validator: PositionValidatorService,
     private readonly CharacterRows: CharacterRepository,
     private readonly Chat: ChatController,
+    private readonly Injury: InjuryService,
   ) {
     onNet(
       NetEvents.CharacterCreate,
@@ -211,6 +213,12 @@ export class CharacterController {
       this.State.SetPhase(Src, 'Spawned');
       this.Routing.MoveToWorld(Src);
       this.Runtimes.Attach(Src, Runtime);
+      // Restamp the /acceptdeath wait clock if the character is
+      // reconnecting in a non-Healthy state. The replicated state bag
+      // is already written by Attach above; the client's
+      // AddStateBagChangeHandler picks it up and applies the dead pose
+      // + combat lock without anything more from us.
+      this.Injury.ApplyOnSpawn(Src, Runtime);
       // Seed the validator with the canonical spawn coord. The 5s grace
       // window baked into Seed absorbs the client's model-load /
       // fade-in delay before the first delta check kicks in.

@@ -5,6 +5,8 @@ import { Logger } from '@/Util/Logger.js';
 import type { ChatService } from '@/Services/ChatService.js';
 import type { PlayerStateService } from '@/Services/PlayerStateService.js';
 import type { ProximityBroadcaster } from '@/Services/ProximityBroadcaster.js';
+import type { CharacterRuntimeService } from '@/Services/CharacterRuntimeService.js';
+import { AssertHealthy, ChainBeforeRun } from '@/Commands/Shared/AssertHealthy.js';
 
 declare function GetPlayerPed(PlayerSrc: string): number;
 declare function GetVehiclePedIsIn(Ped: number, LastVehicle: boolean): number;
@@ -23,6 +25,7 @@ export function Register(
   Chat: ChatService,
   State: PlayerStateService,
   Broadcaster: ProximityBroadcaster,
+  Runtimes: CharacterRuntimeService,
 ): void {
   const Log = Logger.New('VehicleChat');
 
@@ -32,7 +35,7 @@ export function Register(
     Params: '<message>',
     Category: 'Chat',
     RequireCharacter: true,
-    BeforeRun: AssertNonEmptyBody('cb'),
+    BeforeRun: ChainBeforeRun(AssertHealthy(Runtimes), AssertNonEmptyBody('cb')),
     Run: (Ctx): CommandResult => {
       const SenderVehicle = GetSenderVehicle(Ctx.Source);
       if (SenderVehicle === 0) {
@@ -53,7 +56,7 @@ export function Register(
     Params: '<message>',
     Category: 'Chat',
     RequireCharacter: true,
-    BeforeRun: AssertNonEmptyBody('cw'),
+    BeforeRun: ChainBeforeRun(AssertHealthy(Runtimes), AssertNonEmptyBody('cw')),
     Run: (Ctx): CommandResult => {
       const SenderVehicle = GetSenderVehicle(Ctx.Source);
       if (SenderVehicle === 0) {

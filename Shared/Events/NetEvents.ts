@@ -177,6 +177,42 @@ export const NetEvents = {
    * boolean); /fontsize and /pagesize carry the new numeric value.
    */
   ChatSettingChanged: 'Roleplay:Net:Chat:SettingChanged',
+
+  /**
+   * Client -> server. Local health-poll tick observed the player's ped
+   * HP cross below the critical threshold while in a Healthy state.
+   * Payload is empty by design - Source is the FXServer netId of the
+   * connection (forge-proof), and the server reads the ped's coords
+   * + current InjuryStatus authoritatively rather than trusting any
+   * client-supplied position or status delta. The server applies a
+   * cascade cooldown so a spam client can not advance state faster
+   * than an honest one.
+   */
+  InjuryHealthCritical: 'Roleplay:Net:Injury:HealthCritical',
+
+  /**
+   * Server -> client. The server has authoritatively decided the target
+   * ped's new HP / armour / world position after an injury transition
+   * (lethal hit clamp, /acceptdeath hospital respawn, /helpup partial
+   * restore, /arevive full restore) and is asking the client to apply
+   * the engine-side natives. Necessary because SetEntityHealth /
+   * SetPedArmour / SetEntityCoordsNoOffset / SetEntityHeading are
+   * client-only in FXServer - the server can read ped state but can
+   * not write it. The accompanying state-bag write
+   * (Roleplay:InjuryStatus) drives the visual pose + suppression tick;
+   * this event drives the underlying HP + position state.
+   */
+  InjuryApply: 'Roleplay:Net:Injury:Apply',
+
+  /**
+   * Server -> client. /noclip flipped this admin's free-fly state.
+   * Targets the issuer only; the server keeps the on/off set as the
+   * source of truth so a reconnect-while-noclipping or a duplicate
+   * /noclip can not desync state. The client toggles ped visibility,
+   * collision, freeze, and the per-frame camera-relative movement
+   * tick based on `On`.
+   */
+  AdminNoClipToggle: 'Roleplay:Net:Admin:NoClipToggle',
 } as const;
 
 export type NetEventName = (typeof NetEvents)[keyof typeof NetEvents];
@@ -272,5 +308,22 @@ export interface NetEventPayloads {
      * `fontsize` and `pagesize`. Server flipped the toggle and persisted
      * before emitting so the client just applies the result directly. */
     Value: boolean | number;
+  };
+  [NetEvents.InjuryHealthCritical]: Record<string, never>;
+  [NetEvents.InjuryApply]: {
+    /** Character-column HP (0-100). Client offsets +100 for the GTA native range. */
+    HP: number;
+    /** Optional armour reset value; omit to leave armour untouched. */
+    AP?: number;
+    /** Optional teleport target. When supplied the client moves the ped and resets heading. */
+    Teleport?: {
+      X: number;
+      Y: number;
+      Z: number;
+      Heading: number;
+    };
+  };
+  [NetEvents.AdminNoClipToggle]: {
+    On: boolean;
   };
 }
