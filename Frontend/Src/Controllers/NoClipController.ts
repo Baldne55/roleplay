@@ -1,6 +1,7 @@
 import { NetEvents, type NetEventPayloads } from '@Shared/Events/NetEvents.js';
 import { Logger } from '@/Util/Logger.js';
 
+/* eslint-disable @typescript-eslint/naming-convention -- CitizenFX engine surface: names fixed by the runtime */
 declare function onNet<T extends (...Args: never[]) => void>(EventName: string, Callback: T): void;
 declare function setTick(Callback: () => void): number;
 declare function clearTick(Handle: number): void;
@@ -27,7 +28,13 @@ declare function GetGameplayCamRot(
 declare function IsControlPressed(PadIndex: number, Control: number): boolean;
 declare function IsDisabledControlPressed(PadIndex: number, Control: number): boolean;
 declare function DisableControlAction(PadIndex: number, Control: number, Disable: boolean): void;
+/* eslint-enable @typescript-eslint/naming-convention */
 
+/**
+ * Control-group index for keyboard/mouse. Every IsControlPressed and
+ * DisableControlAction call here passes it - noclip is a staff tool and
+ * is not wired for gamepad.
+ */
 const PadKeyboard = 0;
 
 /** Base per-frame distance, metres. ~30 m/s at 60 fps. */
@@ -36,11 +43,11 @@ const BaseSpeed = 0.5;
 const BoostMultiplier = 4.0;
 
 /**
- * Inputs read while noclipping. WASD moves camera-relative; Space + Ctrl
- * move world-vertical; Shift boosts. Space and Ctrl are read via
- * IsDisabledControlPressed because we disable the underlying actions
- * (jump / duck) on the same frame to suppress their default animations
- * on the frozen ped.
+ * Inputs read while noclipping. WASD moves camera-relative; Space/E and
+ * Ctrl/Q move world-vertical; Shift boosts. The vertical keys are read
+ * via IsDisabledControlPressed because we disable the underlying actions
+ * (jump / duck / cover / pickup) on the same frame to suppress their
+ * default animations + interactions on the frozen ped.
  */
 const InputForward = 32; // W
 const InputBack = 33; // S
@@ -48,6 +55,8 @@ const InputLeft = 34; // A
 const InputRight = 35; // D
 const InputUp = 22; // Space (also jump - disabled while active)
 const InputDown = 36; // L-Ctrl (also duck - disabled while active)
+const InputUpAlt = 38; // E (also pickup/interact - disabled while active)
+const InputDownAlt = 44; // Q (also cover - disabled while active)
 const InputBoost = 21; // L-Shift (sprint)
 
 /**
@@ -59,6 +68,8 @@ const InputBoost = 21; // L-Shift (sprint)
 const SuppressedInputs: readonly number[] = [
   InputUp, // 22 jump (re-read via disabled-pressed)
   InputDown, // 36 duck (re-read via disabled-pressed)
+  InputUpAlt, // 38 pickup/interact (re-read via disabled-pressed)
+  InputDownAlt, // 44 cover (re-read via disabled-pressed)
   23, // enter vehicle
   24, // attack
   25, // aim
@@ -112,6 +123,11 @@ export class NoClipController {
     this.Log.Debug('Handlers registered (AdminNoClipToggle, SessionReturnTo*)');
   }
 
+  /**
+   * Enter noclip: detach collision, make the ped invisible, and start the
+   * free-fly loop. Server-authorised before this runs - the client never
+   * enables it on its own say-so.
+   */
   private Enable(): void {
     if (this.IsActive) return;
     const Ped = PlayerPedId();
@@ -127,6 +143,7 @@ export class NoClipController {
     this.Log.Debug('Noclip enabled');
   }
 
+  /** Leave noclip, restoring collision, visibility and normal control. */
   private Disable(): void {
     if (!this.IsActive) return;
     this.IsActive = false;
@@ -143,6 +160,10 @@ export class NoClipController {
     this.Log.Debug('Noclip disabled');
   }
 
+  /**
+   * Per-frame free-fly: read movement input and translate the ped
+   * directly, since normal physics is detached while noclipping.
+   */
   private OnTick(): void {
     const Ped = PlayerPedId();
     if (Ped === 0) return;
@@ -184,8 +205,18 @@ export class NoClipController {
       MoveX += RightX;
       MoveY += RightY;
     }
-    if (IsDisabledControlPressed(PadKeyboard, InputUp)) MoveZ += 1;
-    if (IsDisabledControlPressed(PadKeyboard, InputDown)) MoveZ -= 1;
+    if (
+      IsDisabledControlPressed(PadKeyboard, InputUp) ||
+      IsDisabledControlPressed(PadKeyboard, InputUpAlt)
+    ) {
+      MoveZ += 1;
+    }
+    if (
+      IsDisabledControlPressed(PadKeyboard, InputDown) ||
+      IsDisabledControlPressed(PadKeyboard, InputDownAlt)
+    ) {
+      MoveZ -= 1;
+    }
 
     if (MoveX === 0 && MoveY === 0 && MoveZ === 0) return;
 

@@ -3,6 +3,13 @@ import type { Account } from '@/Data/Models/Account.js';
 import type { AccountRepository } from '@/Data/Repositories/AccountRepository.js';
 import type { DiscordProfile } from '@/Services/DiscordService.js';
 
+/**
+ * Connection facts recorded against an account on every join.
+ *
+ * All three come from FXServer rather than the client. `License` is the
+ * lookup key; the other two are audit trail, and both are nullable
+ * because the natives can fail on a player who drops mid-handshake.
+ */
 interface UpsertContext {
   License: string;
   IP: string | null;
@@ -32,6 +39,15 @@ export class AccountService {
 
   constructor(private readonly Accounts: AccountRepository) {}
 
+  /**
+   * Find or create the account for a connecting player, refreshing its
+   * connection facts.
+   *
+   * Looks up by license first and falls back to Discord id, which is what
+   * lets an existing player keep their account after reinstalling
+   * Windows: the license changes, the Discord id does not. A brand-new
+   * player matches neither and gets a fresh account.
+   */
   async UpsertFromDiscord(Profile: DiscordProfile, Context: UpsertContext): Promise<Account> {
     const Now = new Date();
 

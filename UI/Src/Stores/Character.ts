@@ -36,6 +36,7 @@ export interface OutfitCategoryBounds {
   DrawableMax: number;
   TextureMaxByDrawable: number[];
 }
+/** Per-category clothing bounds the Frontend reports once the ped model has loaded. */
 export type OutfitBoundsMap = Record<string, OutfitCategoryBounds>;
 
 /**
@@ -66,7 +67,7 @@ export type CreateStatus = 'Editing' | 'Submitting' | 'Spawned' | 'Failed';
  *   `CurrentPageIndex` drives the wizard chrome; `Status` + `Reason`
  *   surface submit feedback.
  */
-export const useCharacterStore = defineStore('Character', () => {
+export const UseCharacterStore = defineStore('Character', () => {
   const FirstName = ref<string>('');
   const LastName = ref<string>('');
   const Age = ref<number>(MinAge);
@@ -141,6 +142,7 @@ export const useCharacterStore = defineStore('Character', () => {
 
   function ReplaceSliderValues(Next: SliderValues): void {
     for (const Key of Object.keys(SliderValues)) {
+      // eslint-disable-next-line @typescript-eslint/no-dynamic-delete -- clearing a reactive record in place so Vue tracks the removals
       delete SliderValues[Key];
     }
     Object.assign(SliderValues, Next);

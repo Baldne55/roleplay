@@ -1,7 +1,8 @@
 {
   "name": "@Roleplay/Backend",
-  "version": "0.1.0",
+  "version": "0.5.0",
   "private": true,
+  "description": "FXServer-side resource: gameplay services, command dispatch, persistence. Bundled by esbuild to a single server_script.",
   "type": "module",
   "scripts": {
     "build": "node esbuild.config.mjs",

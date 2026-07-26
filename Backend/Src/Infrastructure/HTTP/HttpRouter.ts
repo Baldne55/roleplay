@@ -2,6 +2,7 @@ import { Logger } from '@/Util/Logger.js';
 
 declare function SetHttpHandler(Handler: (Request: HttpRequest, Response: HttpResponse) => void): void;
 
+/* eslint-disable @typescript-eslint/naming-convention -- CitizenFX engine surface: names fixed by the runtime */
 /** Inbound HTTP request as FXServer hands it to us. */
 export interface HttpRequest {
   address: string;
@@ -20,7 +21,14 @@ export interface HttpResponse {
   write(Data: string): void;
   send(Data?: string): void;
 }
+/* eslint-enable @typescript-eslint/naming-convention */
 
+/**
+ * One route's body. Query is pre-parsed off the path so a handler never
+ * re-splits the URL. Returning a promise is supported, but the router
+ * does not await it before FXServer moves on - a handler must therefore
+ * write its response before any await it does not need to finish first.
+ */
 export type RouteHandler = (Request: HttpRequest, Response: HttpResponse, Query: URLSearchParams) => void | Promise<void>;
 
 /**
@@ -42,10 +50,12 @@ export class HttpRouter {
   private readonly Routes = new Map<string, RouteHandler>();
   private Mounted = false;
 
+  /** Register a GET route. */
   Get(Path: string, Handler: RouteHandler): void {
     this.Routes.set(this.Key('GET', Path), Handler);
   }
 
+  /** Register a POST route. */
   Post(Path: string, Handler: RouteHandler): void {
     this.Routes.set(this.Key('POST', Path), Handler);
   }
@@ -58,6 +68,14 @@ export class HttpRouter {
     this.Log.Debug(`Mounted with ${this.Routes.size} route(s)`);
   }
 
+  /**
+   * Route an incoming request by exact method+path, 404ing anything
+   * unregistered.
+   *
+   * This surface is reachable from outside the game - it backs the future
+   * UCP - so it deliberately has no wildcard or prefix matching: only
+   * exactly-registered paths resolve.
+   */
   private Dispatch(Request: HttpRequest, Response: HttpResponse): void {
     // Split path from query string. `path` from FXServer can include `?...`.
     const QueryIdx = Request.path.indexOf('?');
@@ -85,6 +103,7 @@ export class HttpRouter {
       });
   }
 
+  /** Compose the `METHOD path` map key used by both registration and dispatch. */
   private Key(Method: string, Path: string): string {
     return `${Method.toUpperCase()} ${Path}`;
   }

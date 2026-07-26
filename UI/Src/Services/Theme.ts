@@ -44,6 +44,14 @@ export function ApplyTheme(Mode: ThemeMode): void {
  */
 const CacheKey = 'Roleplay.Settings';
 
+/**
+ * Read the cached theme choice, defaulting to 'System'.
+ *
+ * Read before the server's settings arrive specifically to avoid a
+ * light-then-dark flash on load - the theme is the one preference whose
+ * late application is visually obvious. Validates the stored string
+ * rather than trusting it, since localStorage is player-writable.
+ */
 function ReadCachedMode(): ThemeMode {
   try {
     const Raw = localStorage.getItem(CacheKey);
@@ -58,7 +66,18 @@ function ReadCachedMode(): ThemeMode {
   return 'System';
 }
 
+/**
+ * Guard so the prefers-color-scheme listener is attached at most once.
+ * ApplyTheme can be called repeatedly (every settings push), and CEF does
+ * not de-duplicate identical listeners.
+ */
 let SystemMediaListenerInstalled = false;
+/**
+ * The mode as last applied - the UNRESOLVED value, so 'System' stays
+ * 'System' here rather than collapsing to whichever of Light/Dark it
+ * currently resolves to. Keeping it unresolved is what lets an OS theme
+ * change be followed without another round-trip to the server.
+ */
 let CurrentMode: ThemeMode = 'System';
 
 /**
@@ -80,8 +99,8 @@ export function InitializeTheme(): void {
     };
     if (typeof Query.addEventListener === 'function') {
       Query.addEventListener('change', OnChange);
-    } else if (typeof (Query as MediaQueryList).addListener === 'function') {
-      (Query as MediaQueryList).addListener(OnChange);
+    } else if (typeof (Query).addListener === 'function') {
+      (Query).addListener(OnChange);
     }
   } catch {
     // matchMedia not supported in this CEF build - System will pin to Light.

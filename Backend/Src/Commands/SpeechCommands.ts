@@ -1,8 +1,9 @@
 import { ChatFormatter, ChatRanges, type ChatType } from '@Shared/Chat/Index.js';
 import type { CommandBeforeRun, CommandResult } from '@/Services/CommandTypes.js';
-import { CommandRegistry } from '@/Services/CommandRegistry.js';
+import type { CommandRegistry } from '@/Services/CommandRegistry.js';
 import type { ProximityBroadcaster } from '@/Services/ProximityBroadcaster.js';
 import type { CharacterRuntimeService } from '@/Services/CharacterRuntimeService.js';
+import type { PhoneCallService } from '@/Services/PhoneCallService.js';
 import { AssertHealthy, ChainBeforeRun } from '@/Commands/Shared/AssertHealthy.js';
 
 /**
@@ -16,11 +17,12 @@ export function Register(
   Registry: CommandRegistry,
   Broadcaster: ProximityBroadcaster,
   Runtimes: CharacterRuntimeService,
+  PhoneCall: PhoneCallService,
 ): void {
-  RegisterSpeech(Registry, Broadcaster, Runtimes, 'say', [], 'Speak at normal volume (10 m).', 'Say');
-  RegisterSpeech(Registry, Broadcaster, Runtimes, 'shout', ['s'], 'Shout a message (25 m).', 'Shout');
-  RegisterSpeech(Registry, Broadcaster, Runtimes, 'whisper', ['w'], 'Whisper a message (3 m).', 'Whisper');
-  RegisterSpeech(Registry, Broadcaster, Runtimes, 'low', ['l'], 'Speak quietly (5 m).', 'Low');
+  RegisterSpeech(Registry, Broadcaster, Runtimes, PhoneCall, 'say', [], 'Speak at normal volume (10 m).', 'Say');
+  RegisterSpeech(Registry, Broadcaster, Runtimes, PhoneCall, 'shout', ['s'], 'Shout a message (25 m).', 'Shout');
+  RegisterSpeech(Registry, Broadcaster, Runtimes, PhoneCall, 'whisper', ['w'], 'Whisper a message (3 m).', 'Whisper');
+  RegisterSpeech(Registry, Broadcaster, Runtimes, PhoneCall, 'low', ['l'], 'Speak quietly (5 m).', 'Low');
 
   // /b and /blow are OOC channels; deliberately NOT gated by AssertHealthy
   // so an incapacitated player can still break character and call for help.
@@ -68,6 +70,7 @@ function RegisterSpeech(
   Registry: CommandRegistry,
   Broadcaster: ProximityBroadcaster,
   Runtimes: CharacterRuntimeService,
+  PhoneCall: PhoneCallService,
   Name: string,
   Aliases: readonly string[],
   Description: string,
@@ -84,6 +87,10 @@ function RegisterSpeech(
     Run: (Ctx): CommandResult => {
       const Body = Ctx.Args.join(' ').trim();
       Broadcaster.BroadcastSpeech(Ctx.Source, Body, Type);
+      // In-call relay: only ordinary /say carries down a live phone line
+      // (user decision). The peer copy is attributed to number/contact,
+      // never the legal name; no-op when the speaker is not on a call.
+      if (Type === 'Say') PhoneCall.RelayIfOnCall(Ctx.Source, Body);
       return { Outcome: 'Ok' };
     },
   });

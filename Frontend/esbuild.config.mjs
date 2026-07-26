@@ -22,9 +22,12 @@ const Config = {
   // mirrors browser bundlers' resolution order so npm packages resolve.
   mainFields: ['browser', 'module', 'main'],
   conditions: ['browser'],
-  banner: {
-    js: `// reflect-metadata is bundled inline below.`,
-  },
+  // No banner. There used to be one asserting "reflect-metadata is bundled
+  // inline below", which was false - reflect-metadata is imported nowhere,
+  // is in no package.json, and no decorator-metadata DI is used on either
+  // side (see the Backend config for why it was dropped). The banner was a
+  // leftover from that abandoned approach and stamped the claim into every
+  // built bundle, so it is gone rather than corrected.
 };
 
 if (Watch) {

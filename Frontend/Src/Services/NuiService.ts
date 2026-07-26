@@ -44,6 +44,13 @@ export class NuiService {
     });
   }
 
+  /**
+   * Send a typed message to the NUI browser.
+   *
+   * Stamps the `Type` discriminator itself, so callers pass only the
+   * payload and the two can never disagree - NuiInbox narrows on that
+   * field to route the message.
+   */
   Send<Event extends NUIEventName>(EventName: Event, Payload: Omit<NUIEventPayloads[Event], 'Type'>): void {
     this.WhenReady(() => {
       const Full = { Type: EventName, ...Payload } as NUIEventPayloads[Event];
@@ -51,6 +58,14 @@ export class NuiService {
     });
   }
 
+  /**
+   * Hand keyboard and mouse to the NUI browser, or give them back.
+   *
+   * Cursor defaults to following focus, but the two are separable: the
+   * chat input takes keyboard without a cursor. Calls must stay balanced -
+   * focus left on with no visible UI leaves the player unable to move or
+   * type, recoverable only by reconnecting.
+   */
   Focus(WantFocus: boolean, WantCursor: boolean = WantFocus): void {
     // Focus is independent of CEF readiness - SetNuiFocus is a server-side
     // game state flag, not an NUI message. Apply immediately.
@@ -65,7 +80,7 @@ export class NuiService {
    * function. Always call the response function (with `{}` if no payload)
    * so the SPA's fetch promise resolves.
    */
-  OnCallback<T>(Name: string, Handler: (Data: T) => Promise<unknown> | unknown): void {
+  OnCallback<T>(Name: string, Handler: (Data: T) => unknown): void {
     RegisterNuiCallback(Name, (Data, Cb) => {
       Promise.resolve()
         .then(() => Handler(Data as T))

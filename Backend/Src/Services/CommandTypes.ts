@@ -41,6 +41,12 @@ export type CommandResult =
  * null/false; this is the typed TS shape.
  */
 export type CommandBeforeRunOutcome = { Ok: true } | { Ok: false; Reason: string };
+/**
+ * Pre-execution guard. Returning `{Ok:false}` refuses the command with a
+ * reason and the Run handler never fires, so handlers may assume their
+ * preconditions already hold. May be async - guards that hit the database
+ * (staff checks, character lookups) are ordinary.
+ */
 export type CommandBeforeRun = (
   Context: CommandContext,
 ) => CommandBeforeRunOutcome | Promise<CommandBeforeRunOutcome>;

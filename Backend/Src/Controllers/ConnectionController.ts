@@ -4,16 +4,21 @@ import { WrapDeferrals, type RawDeferrals } from '@/Infrastructure/Queue/Deferra
 
 // FXServer sets `source` as a global before each event handler fires.
 // Capture it on the first line of each handler before any awaits.
+/* eslint-disable @typescript-eslint/naming-convention -- CitizenFX engine surface: names fixed by the runtime */
 declare const source: number;
 
 declare function on<T extends (...Args: never[]) => void>(EventName: string, Callback: T): void;
+/* eslint-enable @typescript-eslint/naming-convention */
 
 /**
  * Connection lifecycle controller.
  *
  *   playerConnecting -> defer + hand off to QueueService
  *   playerJoining    -> clear in-flight (player is now counted by FXServer)
- *   playerDropped    -> remove from queue / in-flight if present
+ *
+ * Queue removal on disconnect lives in the PlayerSessionService
+ * playerDropped dispatcher (Queue.Remove rejects a still-queued
+ * connection's Admit promise).
  *
  * Trust boundary: nothing read from the client. `source` is set by the
  * runtime; identifiers (when we wire Discord later) come from the
@@ -36,10 +41,6 @@ export class ConnectionController {
       Queue.NotifyJoined();
     });
 
-    on('playerDropped', (_Reason: string): void => {
-      Queue.Remove(source);
-    });
-
-    this.Log.Debug('Handlers registered (playerConnecting, playerJoining, playerDropped)');
+    this.Log.Debug('Handlers registered (playerConnecting, playerJoining)');
   }
 }

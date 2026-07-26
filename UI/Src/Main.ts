@@ -1,3 +1,20 @@
+/**
+ * SPA entry point, running inside the NUI CEF browser.
+ *
+ * Two ordering constraints, both marked inline below:
+ *
+ *   1. `InitializeTheme()` runs before mount, so the first paint is
+ *      already in the right palette rather than flashing light then dark.
+ *      It sits above the CSS imports for that reason.
+ *   2. The `NuiReady` handshake fires only after mount and after the
+ *      inbox is listening. FiveM does not queue SendNUIMessage calls, so
+ *      anything the Frontend sent before this signal would be dropped
+ *      silently - it defers every send until this arrives.
+ *
+ * The handshake fetch is wrapped because this bundle also runs outside
+ * CEF under `npm run dev`, where the callback host does not exist; the
+ * SPA renders fine without it.
+ */
 import { createApp } from 'vue';
 import { createPinia } from 'pinia';
 import PrimeVue from 'primevue/config';

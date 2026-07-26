@@ -1,7 +1,8 @@
 {
   "name": "@Roleplay/LoadScreen",
-  "version": "0.1.0",
+  "version": "0.5.0",
   "private": true,
+  "description": "Static loading screen shown while the client streams game data. No bundler - Copy.mjs copies the files verbatim.",
   "type": "module",
   "scripts": {
     "build": "node Copy.mjs",

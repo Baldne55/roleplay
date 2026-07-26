@@ -4,9 +4,18 @@ import type { IQueueService } from './IQueueService.js';
 
 declare function GetConvarInt(VarName: string, Default: number): number;
 declare function GetNumPlayerIndices(): number;
+// eslint-disable-next-line @typescript-eslint/naming-convention -- CitizenFX engine surface
 declare function setTick(Callback: () => void): number;
-declare function clearTick(TickId: number): void;
 
+/**
+ * One player waiting in the connection queue.
+ *
+ * Holds the promise settlers so the `playerConnecting` handler can stay
+ * suspended until this entry reaches the front - resolving admits the
+ * player, rejecting drops them. `Deferrals` is how their position is
+ * reported while they wait, and `EnqueuedAt` orders the queue and drives
+ * timeout eviction.
+ */
 interface QueueEntry {
   Source: number;
   Deferrals: Deferrals;
@@ -89,6 +98,11 @@ export class QueueService implements IQueueService {
     });
   }
 
+  /**
+   * Drop a player who disconnected while queued, rejecting their pending
+   * promise so the suspended connection handler unwinds instead of
+   * waiting forever on someone who has already gone.
+   */
   Remove(Source: number): void {
     const Idx = this.Queue.findIndex((E) => E.Source === Source);
     if (Idx >= 0) {
@@ -98,6 +112,15 @@ export class QueueService implements IQueueService {
     }
   }
 
+  /**
+   * Release an in-flight slot once an admitted player has actually
+   * joined.
+   *
+   * The in-flight list exists because there is a real gap between
+   * admitting someone and the engine counting them as connected - without
+   * reserving that slot, the queue would admit several players into one
+   * opening and overshoot MaxClients.
+   */
   NotifyJoined(): void {
     // Pop the oldest in-flight slot. Players join in the order they were
     // admitted, so FIFO matches reality even without per-source keying.
@@ -107,14 +130,27 @@ export class QueueService implements IQueueService {
     }
   }
 
+  /** How many players are currently waiting. */
   Size(): number {
     return this.Queue.length;
   }
 
+  /**
+   * Connected players plus admitted-but-not-yet-joined ones - the figure
+   * the admission check compares against MaxClients. Counting only
+   * connected players would let the queue overshoot during handshakes.
+   */
   private TotalPotentialActive(): number {
     return GetNumPlayerIndices() + this.InFlight.length;
   }
 
+  /**
+   * Start the admission loop, idempotently.
+   *
+   * Runs on `setTick` with its own interval gate rather than
+   * `setInterval`, so the work stays on the server's tick and cannot
+   * overlap itself.
+   */
   private StartTicker(): void {
     if (this.TickHandle !== null) return;
     this.TickHandle = setTick(() => {
@@ -127,6 +163,13 @@ export class QueueService implements IQueueService {
     });
   }
 
+  /**
+   * Admit the longest-waiting player if there is room.
+   *
+   * One per tick, deliberately: admitting a batch would race several
+   * handshakes into the same slot count. Reserves an in-flight slot
+   * before resolving, so the next tick already accounts for this player.
+   */
   private AdmitOne(): void {
     if (this.Queue.length === 0) return;
     if (this.TotalPotentialActive() >= this.MaxClients) return;
@@ -138,6 +181,10 @@ export class QueueService implements IQueueService {
     this.Log.Debug(`Admit from queue - source=${Entry.Source} waited=${Date.now() - Entry.EnqueuedAt}ms`);
   }
 
+  /**
+   * Refresh every waiting player's position message, so a queue that is
+   * moving visibly says so rather than looking frozen.
+   */
   private BroadcastPositions(): void {
     const Total = this.Queue.length;
     if (Total === 0) return;
@@ -148,6 +195,13 @@ export class QueueService implements IQueueService {
     }
   }
 
+  /**
+   * Expire in-flight slots whose players never completed the handshake.
+   *
+   * Without this the queue leaks capacity permanently: every abandoned
+   * connection would hold a slot forever and the server would eventually
+   * refuse everyone while sitting empty.
+   */
   private PruneInFlight(): void {
     const Now = Date.now();
     // FIFO of timestamps - only the head can be the oldest, drain until

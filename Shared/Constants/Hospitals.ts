@@ -18,6 +18,11 @@ export interface Hospital {
   World: number;
 }
 
+/**
+ * Respawn destinations for /acceptdeath. The nearest entry to the point
+ * of death is chosen, so coverage matters more than count - a region with
+ * no nearby entry sends its casualties across the map.
+ */
 export const Hospitals: readonly Hospital[] = [
   {
     Name: 'Pillbox Medical Center',

@@ -54,6 +54,14 @@ export class AccountSettingsService {
 
   constructor(private readonly Accounts: AccountRepository) {}
 
+  /**
+   * Read an account's settings, merged over the defaults.
+   *
+   * Always returns a complete object - a missing account or a null
+   * settings column yields defaults rather than null. That merge is what
+   * lets a newly added setting apply to existing rows without a
+   * backfill migration.
+   */
   async Get(AccountID: string): Promise<AccountSettings> {
     const Account = await this.Accounts.FindByID(AccountID);
     if (Account === null) return ResolveAccountSettings(null);
@@ -99,6 +107,11 @@ export class AccountSettingsService {
   }
 }
 
+/**
+ * Raised when a settings write fails validation. `Reason` is
+ * player-readable, so controllers can surface it directly rather than
+ * mapping it to a generic message.
+ */
 export class AccountSettingsValidationError extends Error {
   constructor(public readonly Reason: string) {
     super(Reason);

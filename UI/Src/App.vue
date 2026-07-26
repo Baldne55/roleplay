@@ -4,6 +4,20 @@
 </template>
 
 <script setup lang="ts">
+/**
+ * SPA root. Two children, deliberately siblings rather than nested: the
+ * routed surface (auth, selector, creation wizard) and the chat overlay.
+ *
+ * Chat sits outside the RouterView so that scrollback survives navigation
+ * - a player who reads a welcome notice on /Auth still has it when they
+ * reach the selector. Keeping it here rather than inside each view is
+ * also what lets a single route-name check suppress it wholesale on the
+ * surfaces that must paint clean.
+ *
+ * There is no layout, header or chrome at this level: every view paints
+ * its own full-screen card over a transparent body so the game shows
+ * through.
+ */
 import { computed } from 'vue';
 import { useRoute } from 'vue-router';
 import ChatRoot from '@/Components/Chat/ChatRoot.vue';
@@ -27,6 +41,7 @@ const ChatHiddenRoutes = new Set<string>([
   'CharacterCreator',
 ]);
 const Route = useRoute();
+/** Route-level chat suppression; the player's own /toggle lives in ChatRoot. */
 const ChatVisible = computed<boolean>(
   () => typeof Route.name === 'string' && !ChatHiddenRoutes.has(Route.name),
 );

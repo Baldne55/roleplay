@@ -7,7 +7,7 @@ import {
   type ThemeMode,
 } from '@Shared/Constants/AccountSettings';
 import { ApplyTheme, SyncCurrentMode } from '@/Services/Theme';
-import { useChatStore } from '@/Stores/Chat';
+import { UseChatStore } from '@/Stores/Chat';
 
 /**
  * Per-account preferences. Source of truth is the server (`accounts.settings`
@@ -26,18 +26,30 @@ import { useChatStore } from '@/Stores/Chat';
  */
 const CacheKey = 'Roleplay.Settings';
 
+/**
+ * Load the locally-cached settings so the UI can paint with the player's
+ * preferences before the server's copy arrives.
+ *
+ * Purely a first-paint optimisation - the authoritative values land with
+ * AuthCompleted and overwrite whatever this returned. Any failure yields
+ * `{}` and the defaults apply.
+ */
 function ReadCache(): AccountSettings {
   try {
     const Raw = localStorage.getItem(CacheKey);
     if (Raw === null) return {};
     const Parsed = JSON.parse(Raw) as unknown;
     if (typeof Parsed !== 'object' || Parsed === null) return {};
-    return Parsed as AccountSettings;
+    return Parsed;
   } catch {
     return {};
   }
 }
 
+/**
+ * Mirror settings into localStorage for the next session's first paint.
+ * Never the source of truth, so a write failure is safely ignored.
+ */
 function WriteCache(Settings: AccountSettings): void {
   try {
     localStorage.setItem(CacheKey, JSON.stringify(Settings));
@@ -47,7 +59,15 @@ function WriteCache(Settings: AccountSettings): void {
   }
 }
 
-export const useSettingsStore = defineStore('Settings', () => {
+/**
+ * Account preferences, write-through to the server.
+ *
+ * The localStorage cache is a first-paint optimisation ONLY - the server
+ * copy always wins on the next AuthCompleted hydrate. Treat the cache as
+ * disposable: it can be stale, absent, or unwritable (CEF restricts the
+ * storage scheme in some configurations), and none of those are errors.
+ */
+export const UseSettingsStore = defineStore('Settings', () => {
   // Initialise from cache so the first paint is on the user's last
   // chosen theme rather than DefaultAccountSettings.ThemeMode ('System').
   const Cached = ReadCache();
@@ -76,7 +96,7 @@ export const useSettingsStore = defineStore('Settings', () => {
     WriteCache({ ThemeMode: Next.ThemeMode });
     SyncCurrentMode(Next.ThemeMode);
     ApplyTheme(Next.ThemeMode);
-    const Chat = useChatStore();
+    const Chat = UseChatStore();
     Chat.HydrateFrom({
       ChatTimestamp: Next.ChatTimestamp,
       ChatVisible: Next.ChatVisible,

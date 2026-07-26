@@ -6,7 +6,7 @@ import {
   type ChatType,
 } from '@Shared/Chat/Index.js';
 import type { CommandBeforeRun, CommandResult } from '@/Services/CommandTypes.js';
-import { CommandRegistry } from '@/Services/CommandRegistry.js';
+import type { CommandRegistry } from '@/Services/CommandRegistry.js';
 import type { ChatService } from '@/Services/ChatService.js';
 import type { PlayerStateService } from '@/Services/PlayerStateService.js';
 import type { ProximityBroadcaster } from '@/Services/ProximityBroadcaster.js';
@@ -18,8 +18,9 @@ import { AssertHealthy, ChainBeforeRun } from '@/Commands/Shared/AssertHealthy.j
  * Directed-speech commands - /to, /shoutto, /wto. The sender addresses a
  * specific nearby target; everyone in the channel's normal range hears the
  * line, and the target additionally receives a marker-prefixed copy so the
- * cue lands at the bottom of their scrollback. The yellow `-> ` prefix is a
- * forward-prep placeholder for the directed-speech indicator UI; once that
+ * cue lands at the bottom of their scrollback. The pink-magenta `-> ` prefix
+ * (ChatColor.Directed, #FF66CC - not the yellow Highlight that marks PMs) is
+ * a forward-prep placeholder for the directed-speech indicator UI; once that
  * ships, the marker branch collapses to a single proximity broadcast plus a
  * dedicated NUI marker event.
  *
@@ -78,7 +79,7 @@ export function Register(
  * Register one directed-speech variant. The handler resolves both names
  * through DisplayName so masked characters stay anonymous, broadcasts the
  * `(to <Target>)` bystander line at the channel range, then sends the same
- * line prefixed with a yellow arrow marker straight to the target. The
+ * line prefixed with the pink-magenta arrow marker straight to the target. The
  * target receives both copies; the marker line arrives second and so lands
  * at the bottom of their scrollback as the visible cue. When the
  * directed-speech indicator UI ships, the marker branch can be replaced
@@ -160,7 +161,12 @@ function RegisterDirected(
       } else {
         Broadcaster.BroadcastInRange(Ctx.Source, GeneralLine, ChatRanges[Type], Target);
       }
-      Chat.SendTo(Target, MarkedLine);
+      // The marker line bypasses BroadcastInRange, so apply the same
+      // per-viewer server-ID prefix here, gated by the TARGET's toggle.
+      const FinalMarked = Broadcaster.WantsServerIds(Target)
+        ? ChatFormatter.ServerIdPrefix(Ctx.Source) + MarkedLine
+        : MarkedLine;
+      Chat.SendTo(Target, FinalMarked);
 
       return { Outcome: 'Ok' };
     },

@@ -1,8 +1,12 @@
 import type { CharacterSpawnPayload } from '@Shared/Constants/Character.js';
 import type { CameraSpec, Vec3 } from '@Shared/Constants/AuthSkybox.js';
+import { ClientEvents } from '@Shared/Events/ClientEvents.js';
 import { Logger } from '@/Util/Logger.js';
 import type { PedDressingService } from '@/Services/PedDressingService.js';
 
+/* eslint-disable @typescript-eslint/naming-convention -- CitizenFX engine surface: names fixed by the runtime */
+declare function emit(EventName: string, ...Args: unknown[]): void;
+/* eslint-enable @typescript-eslint/naming-convention */
 declare function PlayerPedId(): number;
 declare function DoesEntityExist(Entity: number): boolean;
 declare function RequestCollisionAtCoord(X: number, Y: number, Z: number): void;
@@ -102,6 +106,13 @@ export class SpawnService {
     this.Dressing = Dressing;
   }
 
+  /**
+   * Put the player into the pre-spawn skybox: fade out, place the ped at
+   * the shell coordinates, mount the cinematic camera, fade back in.
+   *
+   * The fade is not decoration - it hides the teleport and the model pop
+   * that would otherwise be visible while the shell assembles.
+   */
   async PrepareAuthShell(SpawnCoord: Vec3, Camera: CameraSpec): Promise<void> {
     this.LastSpawnCoord = SpawnCoord;
     this.LastCamera = Camera;
@@ -144,6 +155,10 @@ export class SpawnService {
     await this.PrepareAuthShell(this.LastSpawnCoord, this.LastCamera);
   }
 
+  /**
+   * Dismantle the skybox shell and hand camera control back to the game.
+   * Runs as the player spawns into the world for real.
+   */
   TearDownAuthShell(): void {
     if (this.CameraHandle !== null) {
       RenderScriptCams(false, false, 0, true, false);
@@ -186,6 +201,9 @@ export class SpawnService {
     this.Dressing.ResetForFreshFreemodePed(Ped);
     this.Dressing.ApplyAppearance(Payload.AppearanceData);
     this.Dressing.ApplyOutfit(Payload.Outfit);
+    // Announces the freshly swapped ped is fully dressed so controllers
+    // can re-apply per-ped state the model swap cleared.
+    emit(ClientEvents.SpawnDressingComplete);
 
     RequestCollisionAtCoord(Payload.Coord.X, Payload.Coord.Y, Payload.Coord.Z);
     SetEntityCoordsNoOffset(
@@ -225,6 +243,11 @@ export class SpawnService {
     );
   }
 
+  /**
+   * Resolve once the screen has finished fading to black, so the moves
+   * that follow happen unseen. Polls, because the fade natives report
+   * state rather than firing an event.
+   */
   private WaitForScreenFadedOut(): Promise<void> {
     return new Promise((Resolve) => {
       const Poll = (): void => {
@@ -238,6 +261,7 @@ export class SpawnService {
     });
   }
 
+  /** Create and activate the scripted skybox camera from a CameraSpec. */
   private MountCinematicCamera(Camera: CameraSpec): void {
     if (this.CameraHandle !== null) {
       DestroyCam(this.CameraHandle, false);
@@ -259,6 +283,13 @@ export class SpawnService {
     this.CameraHandle = Handle;
   }
 
+  /**
+   * Resolve once the local player's ped exists.
+   *
+   * On a fresh join the ped is not available on the first frames, so
+   * every shell operation has to wait on this rather than assuming a
+   * handle is ready.
+   */
   private WaitForPed(): Promise<number> {
     return new Promise((Resolve) => {
       const Poll = (): void => {

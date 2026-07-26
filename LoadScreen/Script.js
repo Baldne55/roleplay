@@ -33,18 +33,33 @@
 
   var Fraction = 0;
 
+  /**
+   * Paint the current fraction as a width and a percentage.
+   *
+   * Clamps to 0-100 because the engine's fraction is not guaranteed to
+   * stay in range - an out-of-band value would otherwise push the fill
+   * bar outside its track.
+   */
   function Render() {
     var Pct = Math.max(0, Math.min(100, Math.round(Fraction * 100)));
     if (Fill !== null) Fill.style.width = Pct + '%';
     if (Percent !== null) Percent.textContent = Pct + '%';
   }
 
+  /**
+   * Update the status line, ignoring empty or non-string values so a
+   * malformed payload leaves the previous label rather than blanking it.
+   */
   function SetLabel(Text) {
     if (Label !== null && typeof Text === 'string' && Text.length > 0) {
       Label.textContent = Text;
     }
   }
 
+  /**
+   * Turn an engine type name into readable prose, or null if unusable.
+   * See the inline note for the shape these arrive in.
+   */
   function FormatType(Raw) {
     if (typeof Raw !== 'string' || Raw.length === 0) return null;
     // Engine type names arrive shouty + underscored ("BEFORE_MAP_LOADED");
@@ -53,6 +68,14 @@
     return Pretty.charAt(0).toUpperCase() + Pretty.slice(1);
   }
 
+  /**
+   * Route one telemetry payload by its `eventName` discriminator.
+   *
+   * The shared sink for both delivery paths below, which is why it takes
+   * a plain object rather than an Event. Unknown names fall through
+   * silently - the engine emits more events than this page cares about,
+   * and the list varies by build.
+   */
   function HandleEvent(Data) {
     if (Data === null || typeof Data !== 'object') return;
     switch (Data.eventName) {
@@ -96,6 +119,11 @@
   // Legacy / forked builds that still dispatch named CustomEvents.
   // Harmless overlap with the message listener; whichever fires updates
   // the same render state.
+  /**
+   * Bridge a named CustomEvent into HandleEvent, normalising the payload
+   * out of either `.data` or `.detail` and re-attaching the event name
+   * that the message path carries inline.
+   */
   function ForwardNamedEvent(Name) {
     window.addEventListener(Name, function (Event) {
       var Data = Event && (Event.data || Event.detail);

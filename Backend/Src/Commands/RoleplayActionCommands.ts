@@ -1,6 +1,6 @@
 import { ChatFormatter, ChatRanges, type ChatType } from '@Shared/Chat/Index.js';
 import type { CommandBeforeRun, CommandResult } from '@/Services/CommandTypes.js';
-import { CommandRegistry } from '@/Services/CommandRegistry.js';
+import type { CommandRegistry } from '@/Services/CommandRegistry.js';
 import type { ProximityBroadcaster } from '@/Services/ProximityBroadcaster.js';
 import type { CharacterRuntimeService } from '@/Services/CharacterRuntimeService.js';
 import { AssertHealthy, ChainBeforeRun } from '@/Commands/Shared/AssertHealthy.js';
@@ -19,8 +19,19 @@ import { AssertHealthy, ChainBeforeRun } from '@/Commands/Shared/AssertHealthy.j
  * character and route through ProximityBroadcaster for mask-aware naming.
  */
 
+/**
+ * Which ChatFormatter call a variant dispatches to. Kept separate from
+ * the command name because all three range variants of a verb share one
+ * tag (/me /melow /melong are all 'Me') - the range lives in ChatType,
+ * the wording lives here.
+ */
 type FormatterTag = 'Me' | 'Do' | 'My';
 
+/**
+ * Wire the emote commands (/me, /do, /my) - narration rather than speech,
+ * so they render in RP purple and reach everyone in proximity regardless
+ * of whether the character could be heard.
+ */
 export function Register(
   Registry: CommandRegistry,
   Broadcaster: ProximityBroadcaster,

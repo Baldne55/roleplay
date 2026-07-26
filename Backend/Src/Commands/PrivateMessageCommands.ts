@@ -1,6 +1,6 @@
 import { ChatFormatter } from '@Shared/Chat/Index.js';
 import type { CommandResult } from '@/Services/CommandTypes.js';
-import { CommandRegistry } from '@/Services/CommandRegistry.js';
+import type { CommandRegistry } from '@/Services/CommandRegistry.js';
 import type { ChatService } from '@/Services/ChatService.js';
 import type { PlayerStateService } from '@/Services/PlayerStateService.js';
 import type { ProximityBroadcaster } from '@/Services/ProximityBroadcaster.js';
@@ -12,10 +12,11 @@ import type { AccountRepository } from '@/Data/Repositories/AccountRepository.js
  *
  * Names are resolved through Broadcaster.DisplayName, the mask-aware
  * identity chokepoint. A masked character renders as `Stranger <MaskID>`,
- * so their legal name never leaks through a PM. Source IDs are NOT
- * echoed in the displayed line either; pairing a numeric ID with a
- * Stranger label across encounters would correlate the mask to its
- * wearer.
+ * so their legal name never leaks through a PM. The OOC server ID is
+ * prepended per-viewer (the other party's id) when the viewer has the
+ * nametag-ID toggle on, matching the speech + nametag behavior - the
+ * server ID is the same OOC handle the nametag already exposes, kept
+ * distinct from the masked IC identity.
  *
  * Block semantics: when the target's account has blocked the sender's
  * account, both the recipient's PmFrom and the sender's PmTo are
@@ -30,6 +31,34 @@ import type { AccountRepository } from '@/Data/Repositories/AccountRepository.js
  * staff rank (Founder) on admin duty - they can /pm themselves to
  * probe the format / colour pipeline live without needing a second
  * client.
+ */
+
+/**
+ * Prepend the per-viewer server-ID prefix to a PM line. The `Viewer`
+ * (who receives this line) sees the OTHER party's server `ShownId` lead
+ * the line when they have the nametag-ID toggle on - the same
+ * preference and OOC handle the nametag + speech IDs use. Shown
+ * regardless of mask, consistent with the nametag.
+ */
+function WithViewerId(
+  Broadcaster: ProximityBroadcaster,
+  Viewer: number,
+  ShownId: number,
+  Line: string,
+): string {
+  return Broadcaster.WantsServerIds(Viewer) ? ChatFormatter.ServerIdPrefix(ShownId) + Line : Line;
+}
+
+/**
+ * Wire the private-message commands.
+ *
+ * PMs are out-of-character and ignore proximity entirely, so they carry
+ * the OOC wrap to keep that boundary visible. Distinct from the other
+ * distance-independent channels: `/o` is server-wide and staff-gated,
+ * radio and phone are in-character and route through a device, while a PM
+ * is player-to-player with no in-world justification at all.
+ *
+ * The store exists so `/reply` works without retyping an id.
  */
 export function Register(
   Registry: CommandRegistry,
@@ -96,14 +125,23 @@ export function Register(
         };
       }
 
-      Chat.SendTo(Ctx.Source, ChatFormatter.PmTo(RecipientName, Body));
+      Chat.SendTo(
+        Ctx.Source,
+        WithViewerId(Broadcaster, Ctx.Source, Target, ChatFormatter.PmTo(RecipientName, Body)),
+      );
 
       if (Target === Ctx.Source) {
         // Founder self-PM: deliver the From-side line on the same
         // connection so both formats render for format probing.
-        Chat.SendTo(Ctx.Source, ChatFormatter.PmFrom(SenderName, Body));
+        Chat.SendTo(
+          Ctx.Source,
+          WithViewerId(Broadcaster, Ctx.Source, Ctx.Source, ChatFormatter.PmFrom(SenderName, Body)),
+        );
       } else {
-        Chat.SendTo(Target, ChatFormatter.PmFrom(SenderName, Body));
+        Chat.SendTo(
+          Target,
+          WithViewerId(Broadcaster, Target, Ctx.Source, ChatFormatter.PmFrom(SenderName, Body)),
+        );
       }
 
       Store.Record(Ctx.Source, Target);
@@ -146,8 +184,14 @@ export function Register(
         };
       }
 
-      Chat.SendTo(Ctx.Source, ChatFormatter.PmTo(RecipientName, Body));
-      Chat.SendTo(Target, ChatFormatter.PmFrom(SenderName, Body));
+      Chat.SendTo(
+        Ctx.Source,
+        WithViewerId(Broadcaster, Ctx.Source, Target, ChatFormatter.PmTo(RecipientName, Body)),
+      );
+      Chat.SendTo(
+        Target,
+        WithViewerId(Broadcaster, Target, Ctx.Source, ChatFormatter.PmFrom(SenderName, Body)),
+      );
       Store.Record(Ctx.Source, Target);
 
       return { Outcome: 'Ok' };

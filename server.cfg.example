@@ -6,7 +6,9 @@ endpoint_add_tcp "0.0.0.0:30120"
 endpoint_add_udp "0.0.0.0:30120"
 
 # ─── Game build / client trust ─────────────────────────────────────────────────
-# We do not trust the FiveM client (see CLAUDE.md / trust-boundary rule).
+# We do not trust the FiveM client. Every inbound net payload is treated as
+# hostile and revalidated server-side; see the Shared/Events/NetEvents.ts
+# header and the controller ingress handlers for how that is applied.
 # These settings are the server-side hardening that does not require code.
 sv_enforceGameBuild 3751
 sv_scriptHookAllowed 0
@@ -75,10 +77,17 @@ set discord_guild_invite "https://discord.gg/REPLACE_WITH_INVITE_CODE"
 set ucp_url "https://REPLACE_WITH_UCP_HOST"
 
 # ─── Loading screen: hide default busy spinner ────────────────────────────────
-# FXServer normally paints a "Loading game (NN%)" busy spinner in the bottom-
-# right corner over the top of any custom loadscreen. The replicated convar
-# below suppresses it so our LoadScreen's bottom-centre progress bar is the
-# only progress UI on screen.
+# FXServer normally paints a busy spinner in the bottom-right corner over the
+# top of any custom loadscreen. The replicated convar below suppresses it so
+# our LoadScreen's bottom-centre progress bar is the only progress UI.
+#
+# This is one of two separate suppressions, which are easy to confuse because
+# both concern bottom-right chrome:
+#   - this convar hides the SPINNER;
+#   - LoadScreen/Script.js consuming the loadProgress stream is what stops the
+#     "Loading game (NN%)" TEXT fallback (FXServer paints that only when the
+#     page ignores the event - see that file's header).
+# Neither replaces the other; dropping either brings its own element back.
 setr sv_showBusySpinnerOnLoadingScreen false
 
 # ─── Log level (development vs production) ────────────────────────────────────

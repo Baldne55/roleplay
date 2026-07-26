@@ -1,5 +1,10 @@
 import { DataTypes, literal, type QueryInterface, type Sequelize } from 'sequelize';
 
+/**
+ * Umzug migration context. Carries the Sequelize instance whose
+ * QueryInterface performs the schema change - migrations never touch the
+ * application connection, which is not yet built when they run.
+ */
 interface Context {
   Sequelize: Sequelize;
 }
@@ -79,6 +84,10 @@ export async function Up({ Sequelize }: Context): Promise<void> {
   });
 }
 
+/**
+ * Drop the table, discarding every row in it. Destructive: rolling this
+ * migration back is a data-loss operation, not a safe undo.
+ */
 export async function Down({ Sequelize }: Context): Promise<void> {
   const Qi: QueryInterface = Sequelize.getQueryInterface();
   await Qi.dropTable('character_outfits');

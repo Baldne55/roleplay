@@ -1,7 +1,8 @@
 import type { Account } from '@/Data/Models/Account.js';
-import { AccountRepository } from '@/Data/Repositories/AccountRepository.js';
+import type { AccountRepository } from '@/Data/Repositories/AccountRepository.js';
 import { Logger } from '@/Util/Logger.js';
-import { PlayerStateService, type PlayerState } from '@/Services/PlayerStateService.js';
+import type { PlayerStateService} from '@/Services/PlayerStateService.js';
+import { type PlayerState } from '@/Services/PlayerStateService.js';
 import { StaffMeets } from '@/Services/StaffLevelRanking.js';
 import type {
   CommandContext,
@@ -195,6 +196,15 @@ export class CommandRegistry {
     }
   }
 
+  /**
+   * Authorise a staff-gated command, resolving the actor's account.
+   *
+   * Two distinct refusals, kept separate on purpose: `PermissionDenied`
+   * means the account's level is too low, `NotOnDuty` means the level is
+   * sufficient but admin duty is off. Both gates must pass - having the
+   * authority is not the same as currently acting on it, which is what
+   * stops an off-duty admin using staff powers in ordinary roleplay.
+   */
   private async CheckStaffPermission(
     Definition: CommandDefinition,
     PlayerState: PlayerState,

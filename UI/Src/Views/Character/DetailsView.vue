@@ -1,3 +1,25 @@
+<!--
+  Character creation, step 1 of 2: identity. Name, gender, blood type,
+  age, height and weight - the biographical fields that end up as columns
+  on the characters row. Step 2 (CreatorView) handles appearance.
+
+  Nothing is submitted from this view. Every field is bound straight into
+  UseCharacterStore, and only the creator at the end of step 2 POSTs the
+  combined draft. That is what lets the player walk back from appearance
+  to identity without losing either half, and why Cancel has to call
+  `Char.ResetAll()` explicitly - navigating away alone would leave the
+  draft populated for the next attempt.
+
+  Bounds (NameMinLength, MinAge/MaxAge, the height and weight ranges) come
+  from Shared/Constants/Character rather than being written into the
+  inputs, because the server re-validates against those same constants on
+  submit. Widening a field here without touching the shared constant just
+  moves the rejection from the form to the server round-trip.
+
+  Age is collected rather than a birth date: the server derives a concrete
+  BirthDate from it at creation time, so the character ages naturally with
+  the calendar afterwards.
+-->
 <script setup lang="ts">
 import { computed } from 'vue';
 import { useRouter } from 'vue-router';
@@ -29,19 +51,26 @@ import {
   NameMaxLength,
   NameMinLength,
 } from '@Shared/Constants/Character';
-import { useCharacterStore } from '@/Stores/Character';
-import { useCharacterListStore } from '@/Stores/CharacterList';
+import { UseCharacterStore } from '@/Stores/Character';
+import { UseCharacterListStore } from '@/Stores/CharacterList';
 
-const Char = useCharacterStore();
-const List = useCharacterListStore();
+const Char = UseCharacterStore();
+const List = UseCharacterListStore();
 const Router = useRouter();
 
-// Cancel is only meaningful when the account already owns at least one
-// character - otherwise there's nowhere to land. Zero-character accounts
-// have no Selector route to go back to (they're routed straight here on
-// AuthCompleted), so the button stays hidden.
+/**
+ * Cancel is only meaningful when the account already owns at least one
+ * character - otherwise there is nowhere to land. Zero-character accounts
+ * have no Selector route to go back to (they are routed straight here on
+ * AuthCompleted), so the button stays hidden and creation must complete.
+ */
 const CanCancel = computed<boolean>(() => List.HasCharacters);
 
+/**
+ * Advance to appearance. Nothing is submitted here - the draft stays in
+ * the store until the creator's final POST, which is what lets the player
+ * walk back without losing it.
+ */
 function Continue(): void {
   if (!Char.DetailsValid) return;
   Router.push('/Character/Creator').catch(() => {
@@ -49,6 +78,10 @@ function Continue(): void {
   });
 }
 
+/**
+ * Abandon creation and return to the selector, wiping the draft
+ * explicitly so a later "Create New Character" starts clean.
+ */
 function Cancel(): void {
   Char.ResetAll();
   Router.replace('/Character/Select').catch(() => {

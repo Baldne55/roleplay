@@ -1,7 +1,8 @@
 {
   "name": "@Roleplay/Shared",
-  "version": "0.1.0",
+  "version": "0.5.0",
   "private": true,
+  "description": "Types, constants and event contracts imported by every other workspace. No runtime natives - must stay loadable on both the server and the CEF browser.",
   "type": "module",
   "main": "./Index.ts",
   "scripts": {

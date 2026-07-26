@@ -1,13 +1,17 @@
 import { ChatColor, ChatFormatter, ChatVerbs } from '@Shared/Chat/Index.js';
 import type { CommandBeforeRun, CommandResult } from '@/Services/CommandTypes.js';
-import { CommandRegistry } from '@/Services/CommandRegistry.js';
-import { Logger } from '@/Util/Logger.js';
+import type { CommandRegistry } from '@/Services/CommandRegistry.js';
+import { DebugEnabled, Logger } from '@/Util/Logger.js';
 import type { ChatService } from '@/Services/ChatService.js';
 import type { PlayerStateService } from '@/Services/PlayerStateService.js';
 import type { ProximityBroadcaster } from '@/Services/ProximityBroadcaster.js';
 import type { CharacterRuntimeService } from '@/Services/CharacterRuntimeService.js';
 import { AssertHealthy, ChainBeforeRun } from '@/Commands/Shared/AssertHealthy.js';
 
+// CitizenFX engine surface: names fixed by the runtime. These two happen
+// to be PascalCase already, so unlike `emitNet` / `Player` elsewhere they
+// need no naming-convention pragma - but they are still engine natives,
+// not local helpers, and both can throw when the ped no longer exists.
 declare function GetPlayerPed(PlayerSrc: string): number;
 declare function GetVehiclePedIsIn(Ped: number, LastVehicle: boolean): number;
 
@@ -44,8 +48,10 @@ export function Register(
       const Body = Ctx.Args.join(' ').trim();
       const DisplayName = Broadcaster.DisplayName(Ctx.Source) ?? 'Someone';
       const Line = ChatFormatter.LocalOoc(DisplayName, Body);
-      const Reached = BroadcastToVehicle(State, Chat, SenderVehicle, Line);
-      Log.Debug(`/cb source=${Ctx.Source} vehicle=${SenderVehicle} reached=${Reached}`);
+      const Reached = BroadcastToVehicle(State, Chat, Broadcaster, Ctx.Source, SenderVehicle, Line);
+      if (DebugEnabled()) {
+        Log.Debug(`/cb source=${Ctx.Source} vehicle=${SenderVehicle} reached=${Reached}`);
+      }
       return { Outcome: 'Ok' };
     },
   });
@@ -68,8 +74,10 @@ export function Register(
         `${DisplayName} ${ChatVerbs.Whisper}: ${Body}`,
         'Whisper',
       );
-      const Reached = BroadcastToVehicle(State, Chat, SenderVehicle, Line);
-      Log.Debug(`/cw source=${Ctx.Source} vehicle=${SenderVehicle} reached=${Reached}`);
+      const Reached = BroadcastToVehicle(State, Chat, Broadcaster, Ctx.Source, SenderVehicle, Line);
+      if (DebugEnabled()) {
+        Log.Debug(`/cw source=${Ctx.Source} vehicle=${SenderVehicle} reached=${Reached}`);
+      }
       return { Outcome: 'Ok' };
     },
   });
@@ -114,10 +122,17 @@ function GetSenderVehicle(Source: number): number {
  * `SenderVehicle`. Each candidate's natives are guarded individually so
  * a single ped resolution failure does not skip the remaining seats.
  * Returns the receiver count (sender included when seated).
+ *
+ * Applies the per-viewer server-ID prefix per receiver, just like
+ * ProximityBroadcaster does for /whisper and /b - vehicle whisper / OOC
+ * must read the same as their proximity twins for a viewer with the
+ * nametag-ID toggle on.
  */
 function BroadcastToVehicle(
   State: PlayerStateService,
   Chat: ChatService,
+  Broadcaster: ProximityBroadcaster,
+  SenderSource: number,
   SenderVehicle: number,
   Line: string,
 ): number {
@@ -132,7 +147,10 @@ function BroadcastToVehicle(
       continue;
     }
     if (Vehicle !== SenderVehicle) continue;
-    Chat.SendTo(Source, Line);
+    const ViewerLine = Broadcaster.WantsServerIds(Source)
+      ? ChatFormatter.ServerIdPrefix(SenderSource) + Line
+      : Line;
+    Chat.SendTo(Source, ViewerLine);
     Count += 1;
   }
   return Count;

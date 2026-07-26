@@ -12,7 +12,7 @@ export type { ChatColorName, ChatColorHex } from './ChatPalette.js';
 export { Parse, Sanitize } from './ChatTokens.js';
 export type { ChatSegment } from './ChatTokens.js';
 export * as ChatFormatter from './ChatFormatter.js';
-export { ChatRanges, ChatVerbs } from './ChatConstants.js';
+export { ChatBodyMaxLength, ChatRanges, ChatVerbs } from './ChatConstants.js';
 export type { ChatType } from './ChatConstants.js';
 
 /**

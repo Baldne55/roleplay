@@ -8,13 +8,14 @@ import type { AccountRepository } from '@/Data/Repositories/AccountRepository.js
 import type { CharacterRepository } from '@/Data/Repositories/CharacterRepository.js';
 import type { DiscordService } from '@/Services/DiscordService.js';
 
+/* eslint-disable @typescript-eslint/naming-convention -- CitizenFX engine surface: names fixed by the runtime */
 declare const source: number;
-declare function on<T extends (...Args: never[]) => void>(EventName: string, Callback: T): void;
 declare function onNet<T extends (...Args: never[]) => void>(EventName: string, Callback: T): void;
 declare function emitNet(EventName: string, Target: number, ...Args: unknown[]): void;
 declare function Player(Source: number | string): {
   state: { set: (Key: string, Value: unknown, Replicated: boolean) => void };
 };
+/* eslint-enable @typescript-eslint/naming-convention */
 
 /**
  * Finalisation step.
@@ -28,9 +29,10 @@ declare function Player(Source: number | string): {
  *     4. Emit AuthSuccess with the cached display name + avatar so the
  *        UI can route to its post-auth view.
  *
- *   on playerDropped:
- *     Release the session claim so future joins for this account aren't
- *     immediately bumped.
+ * The session-claim release on disconnect lives in the
+ * PlayerSessionService playerDropped dispatcher
+ * (AccountSessionService.Release), so future joins for this account
+ * aren't immediately bumped.
  */
 export class AuthController {
   private readonly Log = Logger.New('Auth');
@@ -44,16 +46,22 @@ export class AuthController {
   ) {
     onNet(NetEvents.AuthFinalize, (): void => {
       const Src = source;
-      void this.HandleFinalize(Src);
+      void this.HandleFinalize(Src).catch((Err: unknown) => {
+        this.Log.Error(`HandleFinalize failed for source=${Src}`, { Err: String(Err) });
+      });
     });
 
-    on('playerDropped', (): void => {
-      this.Sessions.Release(source);
-    });
-
-    this.Log.Debug('Handlers registered (AuthFinalize, playerDropped -> session release)');
+    this.Log.Debug('Handlers registered (AuthFinalize)');
   }
 
+  /**
+   * Complete sign-in after the player confirms on the auth card, then
+   * route them to the selector or straight into character creation
+   * depending on whether they own any characters.
+   *
+   * Identity was already established during the connection handshake -
+   * this only converts a confirmed click into a session.
+   */
   private async HandleFinalize(Src: number): Promise<void> {
     const PlayerState = this.State.Get(Src);
     if (PlayerState === null || PlayerState.AccountID === null) {
@@ -121,6 +129,10 @@ export class AuthController {
     }
   }
 
+  /**
+   * Send a sign-in failure to the card, which re-enables its button - the
+   * failure is recoverable, since the usual causes are transient.
+   */
   private EmitFailure(Src: number, Reason: string): void {
     const Payload: NetEventPayloads[typeof NetEvents.AuthFailure] = { Reason };
     emitNet(NetEvents.AuthFailure, Src, Payload);

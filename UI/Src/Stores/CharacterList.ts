@@ -4,7 +4,7 @@ import type { CharacterSummary } from '@Shared/Constants/Character';
 
 /**
  * Selector store. Holds the per-account character list plus the in-flight
- * load + select state. Kept separate from useCharacterStore so the
+ * load + select state. Kept separate from UseCharacterStore so the
  * wizard's reactive ped/preview state doesn't bleed into a view that
  * only reads display fields.
  *
@@ -19,9 +19,19 @@ import type { CharacterSummary } from '@Shared/Constants/Character';
  *     receives CharacterSpawning) on success or CharacterSelectFailure
  *     (UI receives CharacterSelectFailed -> HandleFailure) on rejection.
  */
+/**
+ * Fetch state for the character list. 'Failed' is recoverable - the
+ * selector offers a retry - so it is distinct from an empty 'Loaded',
+ * which legitimately means the account owns no characters.
+ */
 export type ListStatus = 'Idle' | 'Loading' | 'Loaded' | 'Failed';
 
-export const useCharacterListStore = defineStore('CharacterList', () => {
+/**
+ * The character roster and the in-flight selection, per the flow in the
+ * file header above. Holds no appearance data - that lives in the
+ * Character store; this one only ever deals in summaries.
+ */
+export const UseCharacterListStore = defineStore('CharacterList', () => {
   const Characters = ref<CharacterSummary[]>([]);
   const Status = ref<ListStatus>('Idle');
   const Reason = ref<string | null>(null);

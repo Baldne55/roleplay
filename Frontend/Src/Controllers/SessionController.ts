@@ -4,6 +4,7 @@ import { Logger } from '@/Util/Logger.js';
 import type { NuiService } from '@/Services/NuiService.js';
 import type { SpawnService } from '@/Services/SpawnService.js';
 
+// eslint-disable-next-line @typescript-eslint/naming-convention -- CitizenFX engine surface
 declare function onNet<T extends (...Args: never[]) => void>(EventName: string, Callback: T): void;
 
 /**
@@ -47,6 +48,13 @@ export class SessionController {
     this.Log.Debug('Handlers registered (SessionReturnToSelect, SessionReturnToAuth)');
   }
 
+  /**
+   * Return the client to the auth or selector shell after the server
+   * tears the session down (`/logout`, `/changecharacter`).
+   *
+   * Rebuilds the skybox shell and routes the SPA back, so the client ends
+   * up in the same state as a fresh join without reconnecting.
+   */
   private async HandleReturn(
     NuiEvent: typeof NUIEvents.SessionReturnToSelect | typeof NUIEvents.SessionReturnToAuth,
   ): Promise<void> {

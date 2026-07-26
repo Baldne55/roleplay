@@ -36,6 +36,14 @@ const Routes: RouteRecordRaw[] = [
   { path: '/InWorld', name: 'InWorld', component: () => import('@/Views/HiddenView.vue') },
 ];
 
+/**
+ * The SPA router.
+ *
+ * `createMemoryHistory` rather than a web history because there is no URL
+ * bar and no back button inside CEF - navigation is entirely driven by
+ * server pushes, and a history mode would try to write to a location the
+ * NUI browser does not really have.
+ */
 export const Router = createRouter({
   history: createMemoryHistory(),
   routes: Routes,

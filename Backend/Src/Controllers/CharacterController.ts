@@ -15,14 +15,22 @@ import type {
 import type { CharacterRepository } from '@/Data/Repositories/CharacterRepository.js';
 import type { ChatController } from '@/Controllers/ChatController.js';
 import type { InjuryService } from '@/Services/InjuryService.js';
+import type { InventoryService } from '@/Services/InventoryService.js';
+import type { BleedingService } from '@/Services/BleedingService.js';
+import type { PhoneCallService } from '@/Services/PhoneCallService.js';
 
+/* eslint-disable @typescript-eslint/naming-convention -- CitizenFX engine surface: names fixed by the runtime */
 declare const source: number;
-declare function on<T extends (...Args: never[]) => void>(EventName: string, Callback: T): void;
 declare function onNet<T extends (...Args: never[]) => void>(EventName: string, Callback: T): void;
 declare function emitNet(EventName: string, Target: number, ...Args: unknown[]): void;
 declare function GetPlayerEndpoint(PlayerSrc: string): string;
 declare function GetPlayerPed(PlayerSrc: string): number;
 declare function GetEntityCoords(Entity: number): { x: number; y: number; z: number } & [number, number, number];
+/* eslint-enable @typescript-eslint/naming-convention */
+// Remaining CitizenFX natives, already PascalCase so outside the pragma.
+// These four are the disconnect-time snapshot source: they must be read
+// synchronously while the player entity still resolves, because an await
+// before them can outlive the entity and yield zeroes.
 declare function GetEntityHeading(Entity: number): number;
 declare function GetEntityHealth(Entity: number): number;
 declare function GetPedArmour(Ped: number): number;
@@ -52,12 +60,15 @@ declare function GetPlayerRoutingBucket(PlayerSrc: string): number;
  *     bucket to the world, stamp CharacterID, attach runtime cache,
  *     and emit CharacterSpawned.
  *
- *   on playerDropped:
+ *   PersistAndDetachRuntime (invoked by the PlayerSessionService
+ *   playerDropped dispatcher and the mid-session transitions):
  *     Snapshot native-side state (coord / heading / HP / AP / world)
  *     synchronously while the player entity is still resolvable,
  *     combine with the in-memory runtime (IsMasked / Cash / Bank /
  *     InjuryStatus / BleedingStatus), then fire-and-forget the
- *     SaveRuntime UPDATE. No-op if the player never reached Spawned.
+ *     SaveRuntime UPDATE. The save is skipped if the player never
+ *     reached Spawned (or no trustworthy position survives); the
+ *     per-Source inventory + bleeding evictions run on every path.
  */
 export class CharacterController {
   private readonly Log = Logger.New('Character');
@@ -71,38 +82,48 @@ export class CharacterController {
     private readonly CharacterRows: CharacterRepository,
     private readonly Chat: ChatController,
     private readonly Injury: InjuryService,
+    private readonly Inventory: InventoryService,
+    private readonly Bleeding: BleedingService,
+    private readonly PhoneCall: PhoneCallService,
   ) {
     onNet(
       NetEvents.CharacterCreate,
       (Payload: NetEventPayloads[typeof NetEvents.CharacterCreate]): void => {
         const Src = source;
-        void this.HandleCreate(Src, Payload);
+        void this.HandleCreate(Src, Payload).catch((Err: unknown) => {
+          this.Log.Error(`HandleCreate failed for source=${Src}`, { Err: String(Err) });
+        });
       },
     );
 
     onNet(NetEvents.CharacterList, (): void => {
       const Src = source;
-      void this.HandleList(Src);
+      void this.HandleList(Src).catch((Err: unknown) => {
+        this.Log.Error(`HandleList failed for source=${Src}`, { Err: String(Err) });
+      });
     });
 
     onNet(
       NetEvents.CharacterSelect,
       (Payload: NetEventPayloads[typeof NetEvents.CharacterSelect]): void => {
         const Src = source;
-        void this.HandleSelect(Src, Payload);
+        void this.HandleSelect(Src, Payload).catch((Err: unknown) => {
+          this.Log.Error(`HandleSelect failed for source=${Src}`, { Err: String(Err) });
+        });
       },
     );
 
-    on('playerDropped', (): void => {
-      const Src = source;
-      this.HandleDropped(Src);
-    });
-
-    this.Log.Debug(
-      'Handlers registered (CharacterCreate, CharacterList, CharacterSelect, playerDropped)',
-    );
+    this.Log.Debug('Handlers registered (CharacterCreate, CharacterList, CharacterSelect)');
   }
 
+  /**
+   * Create a character from the wizard submission, then spawn it.
+   *
+   * Payload arrives over a NUI callback and is re-validated in full by
+   * CharacterService - nothing here trusts the client's own bounds
+   * checking. Failures come back as CharacterCreateFailure with a
+   * player-readable reason so the wizard can be corrected and resubmitted.
+   */
   private async HandleCreate(
     Src: number,
     Payload: NetEventPayloads[typeof NetEvents.CharacterCreate],
@@ -154,6 +175,11 @@ export class CharacterController {
     }
   }
 
+  /**
+   * Send the account's character roster to the selector. Active rows
+   * only - deleted characters are filtered in the repository, so the
+   * client never learns they existed.
+   */
   private async HandleList(Src: number): Promise<void> {
     const PlayerState = this.State.Get(Src);
     if (PlayerState === null || PlayerState.Phase !== 'Authenticated' || PlayerState.AccountID === null) {
@@ -173,6 +199,17 @@ export class CharacterController {
     }
   }
 
+  /**
+   * Spawn the chosen character into the world.
+   *
+   * Ownership is verified server-side: a client that forges someone
+   * else's character id is refused, which is why the service raises
+   * CharacterSelectError rather than trusting the id to be theirs.
+   *
+   * On success this attaches the runtime, applies the inventory, moves
+   * the player out of their private auth bucket into the shared world,
+   * and dresses the ped.
+   */
   private async HandleSelect(
     Src: number,
     Payload: NetEventPayloads[typeof NetEvents.CharacterSelect],
@@ -213,6 +250,11 @@ export class CharacterController {
       this.State.SetPhase(Src, 'Spawned');
       this.Routing.MoveToWorld(Src);
       this.Runtimes.Attach(Src, Runtime);
+      // Ensure the character's inventory row exists and re-grant any
+      // missing IsPermanent items (decision 33). Runs ahead of the
+      // injury check so the inventory layer is live by the time
+      // /useitem can be invoked.
+      await this.Inventory.ApplyOnSpawn(Src, Runtime);
       // Restamp the /acceptdeath wait clock if the character is
       // reconnecting in a non-Healthy state. The replicated state bag
       // is already written by Attach above; the client's
@@ -251,17 +293,6 @@ export class CharacterController {
   }
 
   /**
-   * playerDropped: snapshot + persist.
-   *
-   * Thin wrapper around PersistAndDetachRuntime - the same persist path
-   * is reused by mid-session transitions (/changecharacter, /logout) so
-   * the snapshot logic lives there.
-   */
-  private HandleDropped(Src: number): void {
-    this.PersistAndDetachRuntime(Src);
-  }
-
-  /**
    * Snapshot, persist, and detach the runtime for a spawned source.
    *
    *   Position / heading / world: prefer the validator's last-sane
@@ -284,6 +315,29 @@ export class CharacterController {
    * downstream state changes (phase, bucket, etc.).
    */
   PersistAndDetachRuntime(Src: number): void {
+    // Decision 21: tear the equipped weapon down first - null the
+    // replicated bag and strip the ped's weapons server-side (the
+    // weapon natives are apiset-server) before any other detach work.
+    // A /changecharacter cannot leak a gun across the switch even if
+    // the old client ignores every event from here on.
+    this.Inventory.ClearEquippedWeapon(Src);
+
+    // Per-Source inventory + bleeding evictions run unconditionally,
+    // NOT behind the early returns below: the cooldown / rate-limit /
+    // shot-accounting maps and the bleeding timers are session state
+    // that must not leak to the next character on this Source (or the
+    // next connection recycling it) just because there was nothing to
+    // persist (never spawned, no trustworthy position). The persisted
+    // rows are untouched - inventory self-saves on every mutation and
+    // the BleedingStatus column rides the SaveRuntime write below.
+    // After ClearEquippedWeapon so its bag-mirror write cannot
+    // resurrect the just-evicted entry.
+    this.Inventory.Evict(Src);
+    this.Bleeding.Evict(Src);
+    // Tear down any live call (final bill, peer notify) before the runtime
+    // detaches. Idempotent - HandleDropped re-runs it after its fence.
+    this.PhoneCall.Evict(Src);
+
     const Runtime = this.Runtimes.Detach(Src);
     if (Runtime === null) {
       // Source never reached Spawned (or already detached). Drop the
@@ -298,14 +352,20 @@ export class CharacterController {
 
     const Position = this.ResolvePersistedPosition(Src, Ped, Validated);
     if (Position === null) {
-      // No trustworthy position available - skip the save rather than
-      // clobber the row with garbage. The non-position fields are not
-      // worth persisting in isolation (Cash / Bank flow through the
-      // economy layer; IsMasked / Injury / Bleeding revert to defaults
-      // at most, which is the smallest harm).
+      // No trustworthy position available - skip the position-bearing
+      // save rather than clobber the row with garbage. Most non-position
+      // fields are fine to lose here (Cash / Bank flow through the
+      // economy layer; IsMasked / Injury / Bleeding revert to safe
+      // defaults). Radio tuning is the exception: it has no safe default,
+      // so persist it on its own before bailing.
+      void this.CharacterRows
+        .SaveRadioState(Runtime.CharacterID, Runtime.RadioState)
+        .catch((Err: unknown) => {
+          this.Log.Error(`SaveRadioState failed for source=${Src}`, { Err: String(Err) });
+        });
       this.Log.Warn(
         `Runtime persist: no trustworthy position for source=${Src} character=${Runtime.CharacterID}; ` +
-          'save skipped',
+          'position save skipped (radio tuning persisted)',
       );
       return;
     }
@@ -327,8 +387,9 @@ export class CharacterController {
         InjuryStatus: Runtime.InjuryStatus,
         BleedingStatus: Runtime.BleedingStatus,
         IsMasked: Runtime.IsMasked,
-        Cash: Runtime.Cash,
         Bank: Runtime.Bank,
+        RadioState: Runtime.RadioState,
+        ActivePhoneSerial: Runtime.ActivePhoneSerial,
       })
       .then(() => {
         this.Log.Debug(
@@ -377,11 +438,16 @@ export class CharacterController {
     };
   }
 
+  /** Report a creation failure, leaving the wizard's draft intact to fix. */
   private EmitCreateFailure(Src: number, Reason: string): void {
     const Payload: NetEventPayloads[typeof NetEvents.CharacterCreateFailure] = { Reason };
     emitNet(NetEvents.CharacterCreateFailure, Src, Payload);
   }
 
+  /**
+   * Report a spawn failure. Clears the selector's in-flight marker so the
+   * roster becomes interactive again rather than stuck on "Spawning...".
+   */
   private EmitSelectFailure(Src: number, Reason: string): void {
     const Payload: NetEventPayloads[typeof NetEvents.CharacterSelectFailure] = { Reason };
     emitNet(NetEvents.CharacterSelectFailure, Src, Payload);
@@ -424,6 +490,11 @@ function NormaliseID(Raw: unknown): string | null {
   return null;
 }
 
+/**
+ * Connecting IP with the port stripped, recorded as the character's
+ * creation IP. Reads from FXServer rather than the client, and yields
+ * null rather than throwing if the player has already dropped.
+ */
 function SafeEndpoint(Src: number): string | null {
   try {
     const Raw = GetPlayerEndpoint(String(Src));

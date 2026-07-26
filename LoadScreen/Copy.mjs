@@ -20,6 +20,13 @@ for (const Name of TopLevelFiles) {
   CopyCount += 1;
 }
 
+/**
+ * Recursively mirror a directory into the resource folder.
+ *
+ * Copies rather than symlinks because FXServer serves the resource
+ * directory directly and does not follow links out of it. Missing source
+ * directories are a no-op, not an error - Assets/ is optional.
+ */
 function CopyTree(SrcDir, DestDir) {
   if (!existsSync(SrcDir)) return;
   mkdirSync(DestDir, { recursive: true });

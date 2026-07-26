@@ -1,5 +1,10 @@
 import type { QueryInterface, Sequelize } from 'sequelize';
 
+/**
+ * Umzug migration context. Carries the Sequelize instance whose
+ * QueryInterface performs the schema change - migrations never touch the
+ * application connection, which is not yet built when they run.
+ */
 interface Context {
   Sequelize: Sequelize;
 }
@@ -22,6 +27,10 @@ export async function Up({ Sequelize }: Context): Promise<void> {
   await Sequelize.query('ALTER TABLE accounts ADD COLUMN settings JSON NULL');
 }
 
+/**
+ * Drop the column added by Up, discarding whatever it held. Destructive -
+ * the values are not recoverable afterwards.
+ */
 export async function Down({ Sequelize }: Context): Promise<void> {
   await Sequelize.query('ALTER TABLE accounts DROP COLUMN settings');
 }

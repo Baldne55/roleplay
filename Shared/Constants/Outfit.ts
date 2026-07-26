@@ -13,6 +13,12 @@
  * "no prop equipped" sentinel handled by the Frontend on apply.
  */
 
+/**
+ * Which native family a category applies through - the split described in
+ * the header. Components use SetPedComponentVariation; Props use
+ * SetPedPropIndex / ClearPedProp and accept the -1 "nothing equipped"
+ * Drawable that Components do not.
+ */
 export type ComponentType = 'Component' | 'Prop';
 
 /**
@@ -28,6 +34,12 @@ export interface ClothingCategory {
   Type: ComponentType;
 }
 
+/**
+ * Every editable clothing slot. `Index` is the native's component or prop
+ * index and is what actually gets applied; `Id` is the stable key used
+ * for slider names and OutfitData record keys, so renaming an Id breaks
+ * saved outfits while reordering this array does not.
+ */
 export const ClothingCategories: readonly ClothingCategory[] = [
   { Id: 'Shirts',      Label: 'Shirts',      Index: 11, Type: 'Component' },
   { Id: 'Undershirts', Label: 'Undershirt',  Index: 8,  Type: 'Component' },
@@ -102,4 +114,5 @@ export function DefaultOutfitData(): OutfitData {
  * spaces so a stored name does not appear empty in lists.
  */
 export const OutfitNameRegex = /^[a-zA-Z0-9-](?:[a-zA-Z0-9- ]*[a-zA-Z0-9-])?$/;
+/** Length cap for a saved outfit name; the regex bounds shape, not length. */
 export const OutfitNameMaxLength = 32;

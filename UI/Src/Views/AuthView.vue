@@ -1,3 +1,35 @@
+<!--
+  Sign-in card - the first surface a connecting player sees, painted over
+  the auth skybox while the deferral queue holds their connection.
+
+  There are no credentials to collect. Identity comes from the FiveM
+  Discord identifier the server already resolved during deferrals, so
+  this view's whole job is to show the player who the server thinks they
+  are and take one confirming click.
+
+  Every computed here is a projection of `Auth.Phase` (see Stores/Auth for
+  the full machine). The four this view renders:
+
+    Idle        identity not resolved yet - avatar hidden, button inert
+    Prepared    Discord name/avatar in hand, ready to submit
+    Submitting  AuthFinalize is in flight, button spinner, input locked
+    Failed      server declined or the callback threw; submit re-enabled
+
+  The fifth, `Authenticated`, is never rendered here - it is the router's
+  cue to leave for the selector or the creation wizard, so this view
+  unmounts on the transition into it.
+
+  `Failed` is deliberately re-submittable rather than terminal: the usual
+  causes (a transient DB hiccup, a webhook timeout) resolve on a retry,
+  and the alternative is telling the player to reconnect and re-queue.
+  /logout comes back through `ResetForReturn`, which rewinds to `Prepared`
+  rather than `Idle` because the server has not re-run the identity gate.
+
+  The theme picker sits here rather than in a settings screen because
+  this is the only surface guaranteed to be visible before a character
+  exists - the choice has to be made before there is an account settings
+  row to persist it against.
+-->
 <script setup lang="ts">
 import { computed } from 'vue';
 import Button from 'primevue/button';
@@ -11,25 +43,30 @@ import {
   IconSun,
 } from '@tabler/icons-vue';
 import { ThemeModes, type ThemeMode } from '@Shared/Constants/AccountSettings';
-import { useAuthStore } from '@/Stores/Auth';
-import { useSettingsStore } from '@/Stores/Settings';
+import { UseAuthStore } from '@/Stores/Auth';
+import { UseSettingsStore } from '@/Stores/Settings';
 import LogoUrl from '@/Assets/Auth/Logo.png';
 
-const Auth = useAuthStore();
-const Settings = useSettingsStore();
+const Auth = UseAuthStore();
+const Settings = UseSettingsStore();
 
+/** Show the Discord avatar only once identity has resolved; else the logo. */
 const ShowAvatar = computed(
   () => Auth.DiscordAvatarURL !== null && Auth.Phase !== 'Idle',
 );
 
+/** Drives the button's loading spinner while AuthFinalize is in flight. */
 const IsSubmitting = computed(() => Auth.Phase === 'Submitting');
+/** Failed is submittable as well as Prepared - the usual causes are transient. */
 const CanSubmit = computed(() => Auth.Phase === 'Prepared' || Auth.Phase === 'Failed');
 
+/** Greeting, personalised once the Discord name is known. */
 const Headline = computed(() => {
   if (Auth.Phase === 'Idle') return 'Welcome';
   return `Welcome, ${Auth.DiscordDisplayName ?? 'friend'}.`;
 });
 
+/** One line of status per phase, so the card always says what it is doing. */
 const Subhead = computed(() => {
   if (Auth.Phase === 'Idle') return 'Resolving your Discord identity...';
   if (Auth.Phase === 'Submitting') return 'Securing your session...';
@@ -37,6 +74,7 @@ const Subhead = computed(() => {
   return 'Ready to enter the server.';
 });
 
+/** Button text per phase - "Try again" on Failed, since it is retryable. */
 const ButtonLabel = computed(() => {
   if (Auth.Phase === 'Submitting') return 'Entering...';
   if (Auth.Phase === 'Failed') return 'Try again';
@@ -44,12 +82,27 @@ const ButtonLabel = computed(() => {
   return 'Enter Server';
 });
 
+/**
+ * Icon shown on the theme cycle button per mode. A full Record over
+ * ThemeMode, so adding a mode is a compile error here until it is given
+ * an icon rather than silently rendering nothing.
+ */
 const ThemeIcons: Record<ThemeMode, typeof IconSun> = {
   Light: IconSun,
   Dark: IconMoon,
   System: IconDeviceLaptop,
 };
 
+/**
+ * Confirm sign-in. Flips the store to `Submitting` first so the button
+ * disables on the same tick as the request leaving - without that, a
+ * double-click sends two AuthFinalize callbacks and the server spawns
+ * the session twice.
+ *
+ * Only the transport failure is handled here. A server-side rejection
+ * arrives asynchronously as its own NUI message and is routed to
+ * `Auth.HandleFailure` by NuiInbox, not through this promise.
+ */
 function HandleEnter(): void {
   if (!CanSubmit.value) return;
   Auth.BeginSubmitting();
@@ -73,13 +126,13 @@ function HandleEnter(): void {
             :src="Auth.DiscordAvatarURL ?? ''"
             alt=""
             class="AuthAvatar"
-          />
+          >
           <img
             v-else
             :src="LogoUrl"
             alt="Roleplay"
             class="AuthLogo"
-          />
+          >
         </div>
       </template>
       <template #title>

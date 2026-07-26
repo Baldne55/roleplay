@@ -20,6 +20,7 @@ import type {
   Gender,
   InjuryStatus,
 } from '@Shared/Constants/Character.js';
+import type { RadioState } from '@Shared/Constants/Radio.js';
 
 /**
  * One character belonging to an Account.
@@ -180,6 +181,39 @@ export class Character extends Model<
   })
   declare BleedingStatus: CreationOptional<BleedingStatus>;
 
+  /**
+   * Stored ethanol grams plus the wall-clock stamp of the last write.
+   * Elimination is computed lazily from the stamp on every read
+   * (Shared/Constants/Alcohol.ts) - no tick ever touches the row, and
+   * a relog cannot sober a character up.
+   */
+  @Default('0.00')
+  @Column({ type: DataType.DECIMAL(6, 2), field: 'blood_alcohol_grams', allowNull: false })
+  declare BloodAlcoholGrams: CreationOptional<string>;
+
+  @Column({ type: DataType.DATE, field: 'blood_alcohol_at', allowNull: true })
+  declare BloodAlcoholAt: CreationOptional<Date | null>;
+
+  /**
+   * Handheld-radio tuning state (power + main channel + tuned slots, see
+   * Shared/Constants/Radio.ts). Typed JSON, nullable: a null column reads
+   * as DefaultRadioState() at spawn (NormalizeRadioState), so existing
+   * characters need no backfill. Persisted with the rest of the runtime
+   * on disconnect.
+   */
+  @Column({ type: DataType.JSON, field: 'radio_state', allowNull: true })
+  declare RadioState: CreationOptional<RadioState | null>;
+
+  /**
+   * Serial (= phone number) of the handset the character has set active
+   * for /phone commands, or null. Nullable string, no backfill. Written
+   * eagerly when the player runs /phone main, and re-validated against
+   * currently-held phones before any use so a traded/dropped handset can
+   * never keep being the active number.
+   */
+  @Column({ type: DataType.STRING(32), field: 'active_phone_serial', allowNull: true })
+  declare ActivePhoneSerial: CreationOptional<string | null>;
+
   // ── World position ─────────────────────────────────────────────────
   // Columns carry NOT NULL defaults sourced from Shared/Constants/
   // AuthSkybox.DefaultSpawn so a brand new character has the Airport
@@ -207,10 +241,9 @@ export class Character extends Model<
   declare Heading: CreationOptional<string>;
 
   // ── Economy ────────────────────────────────────────────────────────
-  @Default('0.00')
-  @Column({ type: DataType.DECIMAL(12, 2), field: 'cash', allowNull: false })
-  declare Cash: CreationOptional<string>;
-
+  // Cash moved to the inventory layer in 0.5.0 (item type `cash`,
+  // stored as integer cents). Bank balances stay as columns until the
+  // bank slice reworks them.
   @Default('0.00')
   @Column({ type: DataType.DECIMAL(12, 2), field: 'bank', allowNull: false })
   declare Bank: CreationOptional<string>;

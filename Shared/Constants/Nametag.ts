@@ -43,9 +43,11 @@ export const NametagBagKeys = {
    *  render the orange `[...]` indicator. */
   IsTyping: 'Roleplay:Nametag:IsTyping',
 
-  /** Date.now() millisecond timestamp written by the local Frontend
-   *  when its own health drops. Other clients read it and render the
-   *  name line in red for 600ms after the timestamp. */
+  /** Date.now() millisecond timestamp written by the Backend's
+   *  weaponDamageEvent hook when the player takes weapon damage.
+   *  Server-authoritative - clients only read it - so a modified
+   *  client can neither fake nor suppress the flash. Clients render
+   *  the name line in red for 600ms after the timestamp. */
   DamageFlash: 'Roleplay:Nametag:DamageFlash',
 
   /** True only while a staff member has /aduty on. Drives the duty
@@ -78,6 +80,19 @@ export const NametagBagKeys = {
  *  this, the renderer skips the ped entirely. Matches lc-rp. */
 export const NametagMaxDistance = 15;
 
+/**
+ * Slack added to NametagMaxDistance for the renderer's cheap pre-cull.
+ * That cull measures to the ped's ORIGIN (roughly pelvis height) rather
+ * than the head bone, so the margin has to cover the origin-to-head
+ * offset plus the horizontal lean of an animating ped - otherwise a
+ * player standing exactly at the edge could be culled by the
+ * approximation before the exact head-bone test ever ran. Two metres is
+ * far more than any ped's skeleton spans; it only has to be an
+ * over-estimate, since anything it lets through is then measured
+ * exactly.
+ */
+export const NametagCullMarginMeters = 2;
+
 /** Text scale at zero distance (closest). Linear interpolation to
  *  NametagMinScale over the 0..NametagMaxDistance range. */
 export const NametagMaxScale = 0.45;
@@ -88,6 +103,13 @@ export const NametagMinScale = 0.3;
 /** LOS raycast cadence in ms. Per-frame raycasts tank framerate; the
  *  cached result is good enough for nametag fade. */
 export const NametagLosIntervalMs = 300;
+
+/** State-bag snapshot cadence in ms. Reading ~10 bag keys per player
+ *  per frame crosses the JS<->native boundary thousands of times a
+ *  second; the tag text doesn't change at frame rate, so the renderer
+ *  refreshes its per-player snapshot on this interval instead. Head
+ *  position / distance / fade stay per-frame. */
+export const NametagSnapshotIntervalMs = 200;
 
 /** How long the name line stays red after a damage-flash timestamp. */
 export const NametagDamageFlashMs = 600;
@@ -118,6 +140,7 @@ export const NametagColors = {
   Typing: [255, 170, 0, 255] as const,
 } as const;
 
+/** Short staff tag rendered on the nametag while an admin is on duty. */
 export type StaffLevelLabel =
   | 'Helper'
   | 'Moderator'

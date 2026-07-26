@@ -3,8 +3,10 @@ import { Logger } from '@/Util/Logger.js';
 import type { InjuryService } from '@/Services/InjuryService.js';
 import type { PlayerStateService } from '@/Services/PlayerStateService.js';
 
+/* eslint-disable @typescript-eslint/naming-convention -- CitizenFX engine surface: names fixed by the runtime */
 declare const source: number;
 declare function onNet<T extends (...Args: never[]) => void>(EventName: string, Callback: T): void;
+/* eslint-enable @typescript-eslint/naming-convention */
 
 /**
  * Backend half of the injury detection wire. The Frontend

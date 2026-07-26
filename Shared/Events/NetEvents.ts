@@ -19,6 +19,16 @@ import type { OutfitData } from '../Constants/Outfit.js';
 import type { AccountSettings } from '../Constants/AccountSettings.js';
 import type { CommandHint } from '../Chat/Index.js';
 
+/**
+ * Every server <-> client event name. Const object rather than an enum so
+ * the NetEventName union and the NetEventPayloads keys both derive from
+ * it; a name added without a payload entry fails to compile at the emit
+ * site.
+ *
+ * Direction is documented per entry and is not encoded in the name -
+ * check the entry before wiring a handler, because registering a
+ * server->client name with `onNet` on the server silently never fires.
+ */
 export const NetEvents = {
   /**
    * Server -> client. Fired on playerJoining once the queue admits the
@@ -141,6 +151,16 @@ export const NetEvents = {
   ChatCommandList: 'Roleplay:Net:Chat:CommandList',
 
   /**
+   * Client -> server. The local chat input gained or lost focus. The
+   * server writes the replicated `Roleplay:Nametag:IsTyping` bag itself
+   * (CharacterRuntimeService.SetTyping) rather than letting the client
+   * write it: the `Roleplay:` bag namespace is server-owned end to end,
+   * so the anti-cheat state-bag tamper watch can treat ANY client write
+   * to a `Roleplay:` key as hostile with no legitimate exception.
+   */
+  ChatTypingState: 'Roleplay:Net:Chat:TypingState',
+
+  /**
    * Server -> client. Spawned player is leaving the world back to the
    * character selector (e.g. /changecharacter). Frontend tears down the
    * spawned state, the SPA resets the list store and routes to
@@ -205,6 +225,36 @@ export const NetEvents = {
   InjuryApply: 'Roleplay:Net:Injury:Apply',
 
   /**
+   * Server -> client. One bleed-out drain tick landed on this player.
+   * Carries a column-range HP *delta* (negative = loss) the client
+   * applies atomically against its live engine HP. A delta rather than
+   * an absolute write because SET_ENTITY_HEALTH has no server apiset
+   * variant - an absolute-HP instruction computed server-side would
+   * race concurrent gunfire and resurrect damage dealt in flight.
+   */
+  BleedingDrainTick: 'Roleplay:Net:Bleeding:DrainTick',
+
+  /**
+   * Server -> client. One consumable HP-regen tick landed on this
+   * player (the medkit's over-time window). Carries a column-range HP
+   * *delta* (positive = gain) applied atomically against the live
+   * engine HP - the same relative-not-absolute reasoning as
+   * BleedingDrainTick, mirrored: an absolute heal target computed
+   * server-side would race concurrent gunfire and erase damage dealt
+   * in flight.
+   */
+  InjuryRegenTick: 'Roleplay:Net:Injury:RegenTick',
+
+  /**
+   * Server -> client. One withdrawal symptom drained this player.
+   * Relative negative column-range delta - same compose-not-overwrite
+   * rationale as the bleeding drain. The server gates on the
+   * withdrawal floor before emitting; the client refuses to cross it
+   * even if an instruction slips through.
+   */
+  AddictionWithdrawalTick: 'Roleplay:Net:Addiction:WithdrawalTick',
+
+  /**
    * Server -> client. /noclip flipped this admin's free-fly state.
    * Targets the issuer only; the server keeps the on/off set as the
    * source of truth so a reconnect-while-noclipping or a duplicate
@@ -213,8 +263,102 @@ export const NetEvents = {
    * tick based on `On`.
    */
   AdminNoClipToggle: 'Roleplay:Net:Admin:NoClipToggle',
+
+  /**
+   * Client -> server. Player typed /item drop; the client emits the
+   * intent so the server can re-read ped coords (advisory client
+   * coords are NOT trusted). Server runs the lock + transaction +
+   * GroundDropRepo.Create + ProximityNetBroadcaster.Emit cycle.
+   */
+  InventoryDropRequest: 'Roleplay:Net:Inventory:DropRequest',
+
+  /**
+   * Client -> server. Player typed /item pickup; the client sends
+   * the cached DropID resolved from the most recent /item nearby
+   * listing.
+   */
+  InventoryPickupRequest: 'Roleplay:Net:Inventory:PickupRequest',
+
+  /**
+   * Client -> server. Local ammo poll observed the equipped ammo
+   * drop below the last-sampled value. Payload carries the client's
+   * reading as advisory; the server is authoritative and clamps the
+   * pop against its own FIFO accounting. The weapon natives
+   * themselves (give / remove / SetPedAmmo) run server-side - this
+   * event exists only because FXServer has no apiset-server ammo
+   * *getter* to observe discharges with.
+   */
+  InventoryWeaponShot: 'Roleplay:Net:Inventory:WeaponShot',
+
+  /**
+   * Client -> server. Player typed /item reload; the server consumes
+   * compatible loose ammo from inventory and applies the new total
+   * via the server-side SetPedAmmo native.
+   */
+  InventoryWeaponReloadRequest: 'Roleplay:Net:Inventory:WeaponReloadRequest',
+
+  /**
+   * Server -> client. A ground drop entered the receiver's
+   * proximity. Spawns a placeholder prop + a 3D label with the
+   * nametag-style distance fade.
+   */
+  InventoryGroundDropSpawn: 'Roleplay:Net:Inventory:GroundDropSpawn',
+
+  /**
+   * Server -> client. A ground drop was picked up / cleared.
+   * Despawns the prop + label.
+   */
+  InventoryGroundDropDespawn: 'Roleplay:Net:Inventory:GroundDropDespawn',
+
+  /**
+   * Client -> server. Fired by the client after a fresh spawn so the
+   * server can re-broadcast ground drops already persisted in the DB
+   * (which would otherwise be invisible because their original
+   * GroundDropSpawn broadcast happened before the client connected).
+   */
+  InventoryGroundDropResyncRequest: 'Roleplay:Net:Inventory:GroundDropResyncRequest',
+
+  /**
+   * Server -> client. `/aitem testcatalog` gave the admin's ped every
+   * catalog weapon server-side; the client should now sweep the whole
+   * weapon catalog through the engine's own validity natives
+   * (IsWeaponValid, HasPedGotWeapon, DoesWeaponTakeWeaponComponent,
+   * clip sizes, drop-prop models) and report back.
+   */
+  InventoryCatalogAuditRequest: 'Roleplay:Net:Inventory:CatalogAuditRequest',
+
+  /**
+   * Client -> server. Result of the catalog sweep. Only accepted while
+   * the server holds a pending audit for the Source; the server strips
+   * the audit loadout and relays a summary to the requesting admin.
+   */
+  InventoryCatalogAuditReport: 'Roleplay:Net:Inventory:CatalogAuditReport',
+
+  /**
+   * Client -> server. Periodic self-report from the client anti-cheat
+   * monitor, emitted every MonitorReportIntervalMs while spawned -
+   * flagged or clean. The payload is HOSTILE tier-3 telemetry (a cheat
+   * that kills the monitor kills the signal), so the server
+   * typeof-validates every field, enforces a minimum arrival interval,
+   * and throttles per detection before scoring. The cadence itself is
+   * the heartbeat: a Source that stays spawned while the reports stop
+   * past MonitorSilentThresholdMs is reported as MonitorSilent by the
+   * server-side watchdog.
+   */
+  AnticheatMonitorReport: 'Roleplay:Net:Anticheat:MonitorReport',
+
+  /**
+   * Server -> client. `/ac test` (Founder-gated) instructs the issuer's
+   * own client to simulate one cheat-shaped behaviour so the detection
+   * pipeline can be exercised without cheat tooling: a replicated write
+   * to a `Roleplay:` state-bag key (the tamper-watch canary), or a
+   * temporary monitor silence (the heartbeat watchdog). The client
+   * never initiates these on its own.
+   */
+  AnticheatTestDirective: 'Roleplay:Net:Anticheat:TestDirective',
 } as const;
 
+/** Any server<->client event name, derived from the constants object. */
 export type NetEventName = (typeof NetEvents)[keyof typeof NetEvents];
 
 /**
@@ -292,6 +436,9 @@ export interface NetEventPayloads {
   [NetEvents.ChatCommandList]: {
     Commands: CommandHint[];
   };
+  [NetEvents.ChatTypingState]: {
+    On: boolean;
+  };
   [NetEvents.SessionReturnToSelect]: Record<string, never>;
   [NetEvents.SessionReturnToAuth]: Record<string, never>;
   [NetEvents.SettingsUpdate]: {
@@ -311,10 +458,13 @@ export interface NetEventPayloads {
   };
   [NetEvents.InjuryHealthCritical]: Record<string, never>;
   [NetEvents.InjuryApply]: {
-    /** Character-column HP (0-100). Client offsets +100 for the GTA native range. */
+    /**
+     * Character-column HP (0-100). Client offsets +100 for the GTA
+     * native range. HP is the only ped stat that still round-trips:
+     * armour writes moved server-side (SET_PED_ARMOUR is
+     * apiset-server) while SET_ENTITY_HEALTH has no server variant.
+     */
     HP: number;
-    /** Optional armour reset value; omit to leave armour untouched. */
-    AP?: number;
     /** Optional teleport target. When supplied the client moves the ped and resets heading. */
     Teleport?: {
       X: number;
@@ -323,7 +473,127 @@ export interface NetEventPayloads {
       Heading: number;
     };
   };
+  [NetEvents.BleedingDrainTick]: {
+    /**
+     * Column-range HP delta (negative = loss). Applied as a relative
+     * adjustment against the ped's current engine HP so a drain tick
+     * composes with, rather than overwrites, concurrent damage.
+     */
+    HpDelta: number;
+  };
+  [NetEvents.InjuryRegenTick]: {
+    /**
+     * Column-range HP delta (positive = gain). Relative for the same
+     * reason as the drain tick: a regen tick must compose with, never
+     * overwrite, damage taken while the instruction was in flight.
+     */
+    HpDelta: number;
+  };
+  [NetEvents.AddictionWithdrawalTick]: {
+    /** Column-range HP delta (negative = loss), floored client-side. */
+    HpDelta: number;
+  };
   [NetEvents.AdminNoClipToggle]: {
     On: boolean;
+  };
+  [NetEvents.InventoryDropRequest]: {
+    SlotIndex: number;
+    Quantity: number;
+  };
+  [NetEvents.InventoryPickupRequest]: {
+    DropID: string;
+  };
+  [NetEvents.InventoryWeaponShot]: {
+    /** Client-reported remaining ammo after the shot. Sizes the server's pop, clamped to the weapon's MaxBurstPerEvent; never trusted beyond that bound. */
+    ExpectedRemainingAmmo: number;
+    WeaponHash: number;
+    /** Client clock at time of shot (GetGameTimer). Used for rate-limit cross-check, never trusted as truth. */
+    Timestamp: number;
+  };
+  [NetEvents.InventoryWeaponReloadRequest]: Record<string, never>;
+  [NetEvents.InventoryGroundDropSpawn]: {
+    DropID: string;
+    X: number;
+    Y: number;
+    Z: number;
+    World: number;
+    Label: string;
+    Model: string;
+    /** Weapon-component drops only. The client resolves the prop model
+     *  from the engine (GetWeaponComponentTypeModel) - the catalog
+     *  stores no model names for components - and falls back to the
+     *  Model string when the engine carries none for this component. */
+    ComponentHash?: number;
+    /** Present only for catalog types with a WorldObjectRotation
+     *  (decal-plane fixtures like the blood splat). The client applies
+     *  it via SetEntityRotation after the prop spawns; absent = the
+     *  engine's spawn rotation stands. Degrees. */
+    Rotation?: { Pitch: number; Roll: number; Yaw: number };
+  };
+  [NetEvents.InventoryGroundDropDespawn]: {
+    DropID: string;
+  };
+  [NetEvents.InventoryGroundDropResyncRequest]: Record<string, never>;
+  [NetEvents.InventoryCatalogAuditRequest]: Record<string, never>;
+  [NetEvents.InventoryCatalogAuditReport]: {
+    CheckedWeapons: number;
+    CheckedComponents: number;
+    /** Components whose engine-resolved drop-prop model exists and streams. */
+    ResolvedComponentModels: number;
+    /** Weapon item IDs whose hash the engine does not recognise (IsWeaponValid false). */
+    InvalidWeapons: string[];
+    /** Weapon item IDs the engine knows but the ped did not receive from the server-side give. */
+    MissingWeapons: string[];
+    /** Component/weapon item ID pairs the engine refuses to combine. */
+    ComponentRejections: { Component: string; Weapon: string }[];
+    /** Informational: engine default clip size differs from the catalog MaxAmmo. */
+    ClipSizeMismatches: { ID: string; Engine: number; Catalog: number }[];
+    /** Weapon item IDs whose WorldObjectModel is not a valid streamable model. */
+    InvalidDropModels: string[];
+  };
+  [NetEvents.AnticheatMonitorReport]: {
+    /** Night-vision post-FX active (raw GetUsingnightvision read). */
+    NightVision: boolean;
+    /** Thermal-vision post-FX active (raw GetUsingseethrough read). */
+    ThermalVision: boolean;
+    /** Player-invincibility flag set (keep-ragdoll variant included)
+     *  while the server has not sanctioned noclip. */
+    ClientInvincibility: boolean;
+    /** Rendered-cam distance from the ped in metres (one decimal) when
+     *  the far-camera condition held two consecutive cycles; null when
+     *  not flagged. */
+    FreeCamDistance: number | null;
+    /** Raw GetLocalPlayerAimState_2 value, sent every cycle as
+     *  telemetry. 3 = free aim; 0/1/2 are the assisted modes
+     *  (legitimate on controller input). */
+    AimState: number;
+    /** Assisted aim mode active while the input device read
+     *  keyboard-and-mouse. Never set when the input-device native is
+     *  unavailable - telemetry-only in that case. */
+    AimAssistOn: boolean;
+    /** Stamina still at max after 10+ continuous seconds of
+     *  sprint-speed movement on foot. */
+    InfiniteStamina: boolean;
+    /** Clip ammo above the component-aware engine maximum for the
+     *  equipped weapon. */
+    OverMaxClip: boolean;
+    /** Clip ammo sample when OverMaxClip is flagged; null otherwise. */
+    ClipAmmo: number | null;
+    /** Component-aware engine clip maximum when OverMaxClip is
+     *  flagged; null otherwise. */
+    ClipMax: number | null;
+    /** CanPedRagdoll false on two consecutive cycles outside
+     *  incapacitation and sanctioned noclip. */
+    RagdollHack: boolean;
+    /** Own-ped alpha below opaque or visibility off outside
+     *  sanctioned noclip. */
+    PedAlphaTampering: boolean;
+    /** GetEntityAlpha sample when PedAlphaTampering is flagged; null
+     *  otherwise. */
+    PedAlpha: number | null;
+  };
+  [NetEvents.AnticheatTestDirective]: {
+    /** Which simulation to run on the issuer's client. */
+    Case: 'BagWrite' | 'MonitorSilence';
   };
 }

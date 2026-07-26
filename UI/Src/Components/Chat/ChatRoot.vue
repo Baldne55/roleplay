@@ -1,10 +1,39 @@
+<!--
+  Shell for the in-world chat overlay: owns visibility, the two player
+  display preferences that have to cascade, and the composition of
+  MessageList over InputBar.
+
+  Mounted from App.vue as a sibling of the RouterView, not inside it, so
+  the overlay survives navigation between the auth, selector and in-world
+  surfaces instead of remounting per route. App.vue suppresses it on the
+  three routes that must paint clean (/Hidden and the two character-creation
+  steps); this component's own `Visible` gate is the player-facing one.
+  Fixed-position with `pointer-events: auto`, so it floats above the SPA
+  rather than participating in its layout.
+
+  Two things belong at this level rather than lower down:
+
+    - Visibility. Both the /toggle chat gate and the "nothing to show
+      yet" case collapse the whole subtree. Messages keep accumulating in
+      the store while hidden, so toggling back on restores history rather
+      than starting blank.
+    - The /fontsize and /pagesize scalars, published as CSS custom
+      properties. Descendant rules size themselves off `--chat-font-scale`
+      via calc(), which is what lets the two settings compose - the list's
+      max-height is page-size * scaled-row-height, so raising the font
+      grows the box instead of clipping rows.
+
+  InputBar is mounted conditionally and MessageList unconditionally: the
+  draft line's mount/unmount drives NUI focus acquisition, so it must not
+  exist while the player is not typing.
+-->
 <script setup lang="ts">
 import { computed } from 'vue';
-import { useChatStore } from '@/Stores/Chat';
+import { UseChatStore } from '@/Stores/Chat';
 import MessageList from '@/Components/Chat/MessageList.vue';
 import InputBar from '@/Components/Chat/InputBar.vue';
 
-const Chat = useChatStore();
+const Chat = UseChatStore();
 
 // Render the shell as long as there's anything to show or the input is
 // open. A freshly spawned player with zero messages sees nothing until
@@ -14,6 +43,11 @@ const Chat = useChatStore();
 // the overlay disappears entirely (the player chose to hide it). New
 // pushes still accumulate in the store so they reappear on /toggle chat
 // back on.
+/**
+ * Two gates in one: the player's /toggle preference, and "is there
+ * anything to show". Messages keep accumulating while hidden, so toggling
+ * back on restores scrollback rather than starting blank.
+ */
 const Visible = computed<boolean>(
   () => Chat.ChatVisible && (Chat.Messages.length > 0 || Chat.InputActive),
 );
@@ -26,6 +60,11 @@ const Visible = computed<boolean>(
 // PageSize is the visible row count in the message list. The list's
 // max-height multiplies it by the scaled row height so /pagesize +
 // /fontsize compose correctly.
+/**
+ * Publish /fontsize and /pagesize as CSS custom properties, so descendant
+ * rules can size themselves off them via calc() - that is what makes the
+ * two settings compose instead of clipping each other.
+ */
 const RootStyle = computed(() => ({
   '--chat-font-scale': String(Chat.FontSize / 0.65),
   '--chat-page-size': String(Chat.PageSize),

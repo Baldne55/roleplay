@@ -1,4 +1,17 @@
 <!doctype html>
+<!--
+  Loading screen, shown by the FiveM client while it streams game data.
+
+  Declared as the resource's `loadscreen` in fxmanifest, so it is the
+  first thing a connecting player sees - before the auth skybox and long
+  before the SPA exists. Entirely self-contained: no build step, no
+  framework, and no network access, since it runs before the player has
+  finished connecting.
+
+  Script.js consumes FXServer's progress telemetry; see its header for the
+  event contract and why the listener is on `message` rather than the
+  named events the docs describe.
+-->
 <html lang="en">
   <head>
     <meta charset="UTF-8" />

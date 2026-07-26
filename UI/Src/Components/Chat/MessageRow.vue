@@ -1,11 +1,33 @@
+<!--
+  One rendered chat line.
+
+  Receives a message already parsed into `ChatSegment`s - runs of text
+  each carrying a resolved colour - rather than a raw body string. The
+  server speaks the `!{#RRGGBB}` token format on the wire; ChatTokens
+  parses it into segments at ingress, and this component only ever binds
+  segment text through `{{ }}` interpolation.
+
+  That is the security boundary for the whole chat surface: player-authored
+  text reaches the DOM as text nodes, never as markup. `v-html` must not
+  appear in this file - a player typing `<img onerror=...>` in /say would
+  otherwise execute inside the NUI browser, which has the client's full
+  NUI callback surface reachable from it. Colour is applied through a
+  bound `style`, so a malformed token can produce a wrong colour but
+  cannot inject an attribute.
+
+  Purely presentational: no store writes, no NUI calls. The two store
+  reads (`TimestampVisible`, and the `--chat-font-scale` variable the
+  stylesheet consumes) are the player's own /toggle and /fontsize
+  preferences.
+-->
 <script setup lang="ts">
 import { computed } from 'vue';
 import type { ChatSegment } from '@Shared/Chat/Index';
-import { useChatStore } from '@/Stores/Chat';
+import { UseChatStore } from '@/Stores/Chat';
 
 const Props = defineProps<{ Segments: ChatSegment[]; ReceivedAt: number }>();
 
-const Chat = useChatStore();
+const Chat = UseChatStore();
 
 /** `[HH:MM:SS]` derived from ReceivedAt; only rendered when /toggle
  * timestamp is on. Local wall-clock; no timezone math. */
@@ -19,13 +41,13 @@ const TimestampLabel = computed<string>(() => {
 <template>
   <div class="Chat-Row">
     <span v-if="Chat.TimestampVisible" class="Chat-Row-Timestamp"
-      >{{ TimestampLabel }} </span
+    >{{ TimestampLabel }} </span
     >
     <span
       v-for="(Segment, Index) in Segments"
       :key="Index"
       :style="{ color: Segment.Color }"
-      >{{ Segment.Text }}</span
+    >{{ Segment.Text }}</span
     >
   </div>
 </template>

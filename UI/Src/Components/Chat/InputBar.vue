@@ -1,12 +1,42 @@
+<!--
+  The chat draft line: text field, character counter, and the autocomplete
+  dropdown it owns the selection state for.
+
+  Mounted only while `Chat.InputActive` (see ChatRoot), which makes the
+  mount/unmount pair the natural place to move NUI focus. On mount it
+  POSTs `Chat:Focus {On: true}`, which has the client call SetNuiFocus so
+  keystrokes reach this field instead of the game; on unmount it posts
+  `{On: false}` to hand control back. Those two must stay balanced - a
+  path that tears the component down without the unmount hook running
+  leaves the player focused into a dead browser with no way to move or
+  reopen chat short of a reconnect. Every dismissal therefore routes
+  through `Chat.HideInput()` rather than unmounting the component directly.
+
+  Key handling, all `.prevent` so the game never also sees the keystroke:
+
+    Enter      submit (never applies a suggestion - see HandleEnter)
+    Tab        apply the highlighted suggestion
+    Esc        cancel and close
+    Up/Down    history when a recall is active, else suggestion navigation
+    PgUp/PgDn  scroll the message list
+
+  `HighlightIndex` lives here rather than in the store or in SuggestionBox
+  because this component owns the arrow keys that move it; the dropdown
+  below is pure presentation and receives it as a prop. Two watchers keep
+  it in range as the suggestion list changes underneath it.
+-->
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue';
-import { useChatStore } from '@/Stores/Chat';
+import { UseChatStore } from '@/Stores/Chat';
 import SuggestionBox from '@/Components/Chat/SuggestionBox.vue';
 
-const Chat = useChatStore();
+const Chat = UseChatStore();
+/** The text field, for programmatic refocus after applying a suggestion. */
 const InputEl = ref<HTMLInputElement | null>(null);
+/** Selected suggestion row. Owned here because this component owns the arrow keys. */
 const HighlightIndex = ref<number>(0);
 
+/** Characters left before the server-side cap; the counter turns amber near zero. */
 const RemainingChars = computed<number>(() => Chat.InputMaxLength - Chat.Input.length);
 
 watch(
@@ -27,6 +57,11 @@ watch(
   },
 );
 
+/**
+ * Focus the field on the next tick, once Vue has flushed - focusing
+ * synchronously can target an element that is about to be re-rendered.
+ * `preventScroll` stops the overlay jumping.
+ */
 function FocusInput(): void {
   void nextTick(() => {
     InputEl.value?.focus({ preventScroll: true });
@@ -50,6 +85,7 @@ onBeforeUnmount(() => {
   });
 });
 
+/** Submit the draft. Never applies a suggestion - see the inline note. */
 function HandleEnter(): void {
   // Enter always submits. Tab is the only key that applies a suggestion -
   // otherwise typing the full command name (e.g. /help) would have Enter
@@ -57,15 +93,25 @@ function HandleEnter(): void {
   void Chat.Submit();
 }
 
+/**
+ * Cancel and close. Routes through the store rather than unmounting
+ * directly, so the NUI focus handshake in this component's unmount hook
+ * always runs - see the header.
+ */
 function HandleEscape(): void {
   Chat.HideInput();
 }
 
+/** Apply the highlighted suggestion; no-ops when the list is empty. */
 function HandleTab(): void {
   if (Chat.Suggestions.length === 0) return;
   ApplySuggestion();
 }
 
+/**
+ * Replace the draft with the highlighted command name and refocus.
+ * Deliberately adds no trailing space - see the inline note.
+ */
 function ApplySuggestion(): void {
   const Hint = Chat.Suggestions[HighlightIndex.value];
   if (Hint === undefined) return;
@@ -76,6 +122,12 @@ function ApplySuggestion(): void {
   FocusInput();
 }
 
+/**
+ * Up: history when a recall is already active, otherwise suggestion
+ * navigation, falling back to history when there are no suggestions. The
+ * precedence is what stops the keys flipping meaning mid-recall - see the
+ * inline note.
+ */
 function HandleUp(): void {
   // Once the player has stepped into history mode (a recall is on
   // screen) arrow keys keep navigating history regardless of whether
@@ -93,6 +145,7 @@ function HandleUp(): void {
   Chat.NavigateHistory(-1);
 }
 
+/** Down: the mirror of HandleUp, with the same precedence rules. */
 function HandleDown(): void {
   if (Chat.HistoryIndex !== -1) {
     Chat.NavigateHistory(1);
@@ -105,10 +158,12 @@ function HandleDown(): void {
   Chat.NavigateHistory(1);
 }
 
+/** Scroll the message list up one window, via the store's counter. */
 function HandlePageUp(): void {
   Chat.RequestScroll(-1);
 }
 
+/** Scroll the message list down one window. */
 function HandlePageDown(): void {
   Chat.RequestScroll(1);
 }
@@ -134,7 +189,7 @@ function HandlePageDown(): void {
         @keydown.down.prevent="HandleDown"
         @keydown.page-up.prevent="HandlePageUp"
         @keydown.page-down.prevent="HandlePageDown"
-      />
+      >
       <span
         v-if="Chat.CharacterCounterVisible"
         class="Chat-Counter"

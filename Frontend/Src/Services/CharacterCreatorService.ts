@@ -106,6 +106,14 @@ export class CharacterCreatorService {
     private readonly Dressing: PedDressingService,
   ) {}
 
+  /**
+   * Stand up the creator scene: load the gender's ped model, place it,
+   * and mount the preview camera.
+   *
+   * Must complete before any Apply* call - those assume a live ped. The
+   * model load is async, which is why this is the only Apply-family
+   * method that returns a promise.
+   */
   async StartPreview(Gender: Gender): Promise<void> {
     await this.Dressing.LoadAndSetModel(Gender);
 
@@ -152,10 +160,20 @@ export class CharacterCreatorService {
     this.Log.Debug(`Preview started - gender=${Gender} ped=${Ped}`);
   }
 
+  /**
+   * Push face, hair and overlay values onto the preview ped. Called on
+   * every appearance slider change, so it stays a direct native write
+   * with no reload.
+   */
   ApplyAppearance(Data: AppearanceData): void {
     this.Dressing.ApplyAppearance(Data);
   }
 
+  /**
+   * Dress the preview ped, then report the model's real drawable and
+   * texture bounds back to the UI - the wizard cannot know them until the
+   * model is loaded, which is what LiveMax in CreatorView consumes.
+   */
   ApplyOutfit(Data: OutfitData): void {
     this.Dressing.ApplyOutfit(Data);
   }
@@ -195,6 +213,7 @@ export class CharacterCreatorService {
     this.Nui.Send(NUIEvents.OutfitBounds, Payload);
   }
 
+  /** Reposition the preview camera without touching the ped. */
   ApplyCamera(Spec: PreviewCamera): void {
     if (this.CameraHandle === null) return;
     const Gender = this.Dressing.GetCurrentGender();
@@ -232,6 +251,12 @@ export class CharacterCreatorService {
     }
   }
 
+  /**
+   * Dismantle the creator scene and restore the auth skybox.
+   *
+   * Only correct when the player is abandoning the wizard - after a
+   * submit the spawn pipeline owns the ped and this would fight it.
+   */
   StopPreview(): void {
     const Ped = PlayerPedId();
     // Clean up the creator-specific state but leave ped position +
@@ -254,6 +279,7 @@ export class CharacterCreatorService {
     this.Log.Debug('Preview stopped, auth shell restored');
   }
 
+  /** Create and activate the scripted preview camera at its initial framing. */
   private MountCamera(Initial: PreviewCamera): void {
     if (this.CameraHandle !== null) {
       DestroyCam(this.CameraHandle, false);

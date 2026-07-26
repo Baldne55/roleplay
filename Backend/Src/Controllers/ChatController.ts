@@ -1,5 +1,11 @@
 import { NetEvents, type NetEventPayloads } from '@Shared/Events/NetEvents.js';
-import { ChatColor, ChatFormatter, Sanitize, type CommandHint } from '@Shared/Chat/Index.js';
+import {
+  ChatBodyMaxLength,
+  ChatColor,
+  ChatFormatter,
+  Sanitize,
+  type CommandHint,
+} from '@Shared/Chat/Index.js';
 import { Logger } from '@/Util/Logger.js';
 import { HasActivePremium } from '@/Data/Models/Account.js';
 import type { PlayerStateService } from '@/Services/PlayerStateService.js';
@@ -8,13 +14,12 @@ import type { ChatService } from '@/Services/ChatService.js';
 import type { ChatRateLimiter } from '@/Services/ChatRateLimiter.js';
 import type { CommandResult } from '@/Services/CommandTypes.js';
 import type { AccountRepository } from '@/Data/Repositories/AccountRepository.js';
+import type { CharacterRuntimeService } from '@/Services/CharacterRuntimeService.js';
 
+/* eslint-disable @typescript-eslint/naming-convention -- CitizenFX engine surface: names fixed by the runtime */
 declare const source: number;
-declare function on<T extends (...Args: never[]) => void>(EventName: string, Callback: T): void;
 declare function onNet<T extends (...Args: never[]) => void>(EventName: string, Callback: T): void;
-
-/** Hard cap on a single chat submission, in characters. */
-const MaxBodyLength = 240;
+/* eslint-enable @typescript-eslint/naming-convention */
 
 /**
  * Chat I/O orchestrator.
@@ -23,18 +28,32 @@ const MaxBodyLength = 240;
  *     1. Phase gate - reject anything not Spawned.
  *     2. Token-bucket rate limit (5 capacity, 1/400ms refill).
  *     3. Sanitize + trim + length cap.
- *     4. If the body starts with '/', dispatch through the command
- *        registry and translate the CommandResult into a chat line.
- *     5. Anything else (no slash) - this slice has no /say yet, so
- *        we surface an INFO line pointing the player at /help.
+ *     4. Dispatch through the command registry and translate the
+ *        CommandResult into a chat line.
  *
- *   on playerDropped:
+ *     Step 4 handles slashed and unslashed input alike: a body with no
+ *     leading '/' is rewritten to `/say <body>` rather than handled
+ *     separately, so the registry stays the single owner of permission
+ *     gating, cooldown stamping and formatter selection. There is no
+ *     second broadcast path to keep in sync.
+ *
+ *   onNet ChatTypingState:
+ *     Server-authoritative typing indicator. The client reports its
+ *     input focus rather than writing the replicated bag itself, which
+ *     keeps the `Roleplay:` bag namespace server-owned.
+ *
+ *   Evict (invoked by the PlayerSessionService playerDropped
+ *   dispatcher):
  *     Drop both the rate-limit bucket and the registry cooldown map
  *     entries for the source. Symmetric hygiene.
  *
  *   PushCommandListToSource(Source):
  *     Snapshot the registry into CommandHint[] and emit it. Called by
  *     CharacterController after the spawn handoff.
+ *
+ *   PushSpawnWelcome(Source, FirstName, LastName):
+ *     Clear the auth-shell scrollback and print the spawn card. Also
+ *     called by CharacterController after the spawn handoff.
  */
 export class ChatController {
   private readonly Log = Logger.New('ChatController');
@@ -45,24 +64,49 @@ export class ChatController {
     private readonly Chat: ChatService,
     private readonly RateLimit: ChatRateLimiter,
     private readonly Accounts: AccountRepository,
+    private readonly Runtimes: CharacterRuntimeService,
   ) {
     onNet(
       NetEvents.ChatSubmit,
       (Payload: NetEventPayloads[typeof NetEvents.ChatSubmit]): void => {
         const Src = source;
-        void this.HandleSubmit(Src, Payload);
+        void this.HandleSubmit(Src, Payload).catch((Err: unknown) => {
+          this.Log.Error(`HandleSubmit failed for source=${Src}`, { Err: String(Err) });
+        });
       },
     );
 
-    on('playerDropped', (): void => {
-      const Src = source;
-      this.Registry.Evict(Src);
-      this.RateLimit.Evict(Src);
-    });
+    onNet(
+      NetEvents.ChatTypingState,
+      (Payload: NetEventPayloads[typeof NetEvents.ChatTypingState]): void => {
+        const Src = source;
+        // Server-authoritative typing indicator: the client emits its
+        // focus on/off here instead of writing the replicated bag, so
+        // the `Roleplay:` namespace stays server-owned. Phase gate keeps
+        // an out-of-world sender from stamping a nametag bag.
+        if (this.State.Get(Src)?.Phase !== 'Spawned') return;
+        this.Runtimes.SetTyping(Src, Payload?.On === true);
+      },
+    );
 
-    this.Log.Debug('Handlers registered (ChatSubmit, playerDropped)');
+    this.Log.Debug('Handlers registered (ChatSubmit, ChatTypingState)');
   }
 
+  /**
+   * Per-Source eviction - invoked by the PlayerSessionService
+   * playerDropped dispatcher. Drops the rate-limit bucket and the
+   * registry cooldown entries. Symmetric hygiene.
+   */
+  Evict(Source: number): void {
+    this.Registry.Evict(Source);
+    this.RateLimit.Evict(Source);
+  }
+
+  /**
+   * Send one player their autocomplete list, filtered to what their staff
+   * level may actually run - a player never receives a hint for a command
+   * they cannot use, so the client cannot leak the admin surface.
+   */
   PushCommandListToSource(Source: number): void {
     const Commands: CommandHint[] = this.Registry.GetAll().map((Def) => ({
       Name: Def.Name,
@@ -128,6 +172,15 @@ export class ChatController {
     }
   }
 
+  /**
+   * Ingress for everything a player types.
+   *
+   * Order is the security-relevant part: rate-limit, then sanitise colour
+   * tokens out of the raw body, then dispatch as a command or as speech.
+   * Sanitising at ingress is what guarantees no player-authored `!{#...}`
+   * token can ever reach a rendered line, whatever path it takes
+   * afterwards - including being persisted and replayed later.
+   */
   private async HandleSubmit(
     Src: number,
     Payload: NetEventPayloads[typeof NetEvents.ChatSubmit],
@@ -145,8 +198,8 @@ export class ChatController {
     const Raw = typeof Payload?.Body === 'string' ? Payload.Body : '';
     const Body = Sanitize(Raw).trim();
     if (Body.length === 0) return;
-    if (Body.length > MaxBodyLength) {
-      this.Chat.SendTo(Src, ChatFormatter.Usage(`Message exceeds ${MaxBodyLength} characters.`));
+    if (Body.length > ChatBodyMaxLength) {
+      this.Chat.SendTo(Src, ChatFormatter.Usage(`Message exceeds ${ChatBodyMaxLength} characters.`));
       return;
     }
 

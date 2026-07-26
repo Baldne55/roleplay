@@ -19,7 +19,9 @@ import {
   type Gender,
 } from '@Shared/Constants/Character.js';
 import { ClothingCategories, DefaultOutfitData, type OutfitData } from '@Shared/Constants/Outfit.js';
+import { NormalizeRadioState } from '@Shared/Constants/Radio.js';
 import { MinorAgeThreshold } from '@Shared/Constants/Nametag.js';
+import { CashStarterCents } from '@Shared/Constants/Inventory.js';
 import type { Sequelize } from 'sequelize-typescript';
 import { Logger } from '@/Util/Logger.js';
 import type { Character } from '@/Data/Models/Character.js';
@@ -27,12 +29,26 @@ import type { CharacterRepository } from '@/Data/Repositories/CharacterRepositor
 import type { CharacterOutfitRepository } from '@/Data/Repositories/CharacterOutfitRepository.js';
 import type { ForensicIDService } from '@/Services/ForensicIDService.js';
 import type { CharacterRuntime } from '@/Services/CharacterRuntimeService.js';
+import type { CashService } from '@/Services/CashService.js';
 
+/**
+ * Result of selecting a character: the spawn payload sent to the client
+ * and the in-memory runtime the server keeps for the session.
+ */
 export interface SelectResult {
   Payload: CharacterSpawnPayload;
   Runtime: CharacterRuntime;
 }
 
+/**
+ * The full creation submission - identity from the wizard's first step,
+ * appearance and outfit from its second.
+ *
+ * Every field is re-validated server-side by the Assert* helpers below.
+ * The client's own bounds checking is a convenience for the player, never
+ * a guarantee: this payload arrives over a NUI callback and is assumed
+ * hostile.
+ */
 export interface CreateCharacterInput {
   AccountID: string;
   FirstName: string;
@@ -99,8 +115,18 @@ export class CharacterService {
     private readonly Outfits: CharacterOutfitRepository,
     private readonly Forensic: ForensicIDService,
     private readonly Database: Sequelize,
+    private readonly Cash: CashService,
   ) {}
 
+  /**
+   * Create a character from a validated wizard submission.
+   *
+   * Order matters: validate everything first, then mint the forensic ids
+   * and bank account against uniqueness checks, then write the character
+   * row and its starter outfit in one transaction. Throws
+   * CharacterCreateError with a player-readable reason on any failure,
+   * including a lost uniqueness race.
+   */
   async Create(Input: CreateCharacterInput): Promise<Character> {
     this.Validate(Input);
 
@@ -162,6 +188,27 @@ export class CharacterService {
     } catch (Err: unknown) {
       await T.rollback();
       throw Err;
+    }
+
+    // Starter cash grant. Materialises the new character's inventory
+    // row (via CashService -> InventoryService.GetInventoryForCharacter)
+    // and credits CashStarterCents to it as the first `cash` item.
+    // Out of the transaction above on purpose - the inventory write
+    // path has its own AsyncLock + transaction lifecycle, and a
+    // failure here should not strand the character creation.
+    try {
+      const Grant = await this.Cash.Add(Created.ID, CashStarterCents, {
+        Reason: 'Starter cash on character creation',
+      });
+      if (Grant.Outcome !== 'Ok') {
+        this.Log.Warn(
+          `Starter cash grant failed character=${Created.ID} outcome=${Grant.Outcome}`,
+        );
+      }
+    } catch (Err: unknown) {
+      this.Log.Warn(`Starter cash grant threw character=${Created.ID}`, {
+        Err: String(Err),
+      });
     }
 
     this.Log.Info(
@@ -243,6 +290,12 @@ export class CharacterService {
     // Runtime mirror of the server-tracked fields (the ones the engine
     // can't report back through natives). Stays in memory until
     // playerDropped flushes it via SaveRuntime.
+    // Radios start every session powered off: the possession gate runs
+    // at /radio on, so a persisted power-on flag can never let a
+    // character who lost their radio between sessions keep transmitting.
+    // The tuned slots still persist - only the power resets.
+    const Radio = NormalizeRadioState(Row.RadioState);
+    Radio.PowerOn = false;
     const Runtime: CharacterRuntime = {
       CharacterID: String(Row.ID),
       FirstName: Row.FirstName,
@@ -251,15 +304,24 @@ export class CharacterService {
       IsMasked: Row.IsMasked,
       BirthDate: Row.BirthDate,
       IsMinor: AgeFromBirthDate(Row.BirthDate) < MinorAgeThreshold,
-      Cash: Row.Cash,
+      BloodType: Row.BloodType,
       Bank: Row.Bank,
       InjuryStatus: Row.InjuryStatus,
       BleedingStatus: Row.BleedingStatus,
+      RadioState: Radio,
+      ActivePhoneSerial: Row.ActivePhoneSerial ?? null,
     };
 
     return { Payload, Runtime };
   }
 
+  /**
+   * Re-validate every field server-side, throwing on the first failure.
+   *
+   * The client's own bounds checking is a convenience for the player and
+   * is never trusted - this payload arrives over a NUI callback and is
+   * assumed hostile.
+   */
   private Validate(Input: CreateCharacterInput): void {
     AssertName('FirstName', Input.FirstName);
     AssertName('LastName', Input.LastName);
@@ -293,6 +355,14 @@ export class CharacterService {
   }
 }
 
+/**
+ * Validate one name field, throwing CharacterCreateError with a
+ * player-readable reason on failure.
+ *
+ * Bounds come from the same Shared constants the form uses, so the two
+ * cannot drift - widening the input without touching the constant just
+ * moves the rejection from the form to here.
+ */
 function AssertName(Field: 'FirstName' | 'LastName', Value: unknown): void {
   if (typeof Value !== 'string') {
     throw new CharacterCreateError(`${Field} is missing.`);
@@ -309,6 +379,13 @@ function AssertName(Field: 'FirstName' | 'LastName', Value: unknown): void {
   }
 }
 
+/**
+ * Structurally validate the appearance blob before it is persisted.
+ *
+ * Checks shape and ranges rather than plausibility - the goal is that a
+ * forged payload cannot write values the ped renderer will choke on, or
+ * smuggle unexpected keys into the stored JSON.
+ */
 function AssertAppearance(Appearance: unknown): void {
   if (typeof Appearance !== 'object' || Appearance === null) {
     throw new CharacterCreateError('Appearance data is missing.');
@@ -364,6 +441,10 @@ function AssertAppearance(Appearance: unknown): void {
   }
 }
 
+/**
+ * Structurally validate the starter outfit, same posture as
+ * AssertAppearance - shape and bounds, not taste.
+ */
 function AssertOutfit(Outfit: unknown): void {
   if (typeof Outfit !== 'object' || Outfit === null) {
     throw new CharacterCreateError('Outfit data is missing.');

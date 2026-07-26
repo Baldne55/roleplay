@@ -3,9 +3,18 @@ import { URL } from 'node:url';
 import { Logger } from '@/Util/Logger.js';
 import type { ServerConfig } from '@/Infrastructure/Config/ServerConfig.js';
 
+/*
+ * Discord REST endpoints, pinned to API v10. Built as functions rather
+ * than string concatenation at the call site so the version prefix lives
+ * in exactly one place when Discord deprecates it.
+ */
+
+/** Profile lookup. Returns the public user object for any snowflake. */
 const UserEndpoint = (ID: string): string => `https://discord.com/api/v10/users/${ID}`;
+/** Guild membership probe - 200 means in the guild, 404 means not. */
 const GuildMemberEndpoint = (GuildID: string, UserID: string): string =>
   `https://discord.com/api/v10/guilds/${GuildID}/members/${UserID}`;
+/** CDN base for avatar images; the hash and extension are appended by AvatarURL. */
 const AvatarCDN = 'https://cdn.discordapp.com/avatars';
 
 /** Subset of `/users/{id}` we care about. Email is not returned for bot-token requests. */
@@ -37,6 +46,13 @@ export class DiscordService {
 
   constructor(private readonly Config: ServerConfig) {}
 
+  /**
+   * Fetch a Discord user's display name and avatar for the sign-in card.
+   *
+   * Cosmetic only - identity is already established from the FiveM
+   * identifier before this runs, so a failure degrades the greeting
+   * rather than blocking the connection.
+   */
   async FetchProfile(DiscordID: string): Promise<DiscordProfile> {
     const Response = await HttpGet(UserEndpoint(DiscordID), this.AuthHeaders());
     if (Response.Status !== 200) {
@@ -46,12 +62,14 @@ export class DiscordService {
     if (Parsed === null || typeof Parsed !== 'object') {
       throw new Error(`Discord /users/${DiscordID} returned non-JSON`);
     }
+    /* eslint-disable @typescript-eslint/naming-convention -- Discord API wire format: field names fixed by Discord */
     const Raw = Parsed as {
       id?: unknown;
       username?: unknown;
       global_name?: unknown;
       avatar?: unknown;
     };
+    /* eslint-enable @typescript-eslint/naming-convention */
     if (typeof Raw.id !== 'string' || typeof Raw.username !== 'string') {
       throw new Error(`Discord /users/${DiscordID} missing required fields`);
     }
@@ -65,6 +83,14 @@ export class DiscordService {
     return Profile;
   }
 
+  /**
+   * Whether the user is in the configured guild - the whitelist gate,
+   * unlike FetchProfile.
+   *
+   * Because a false here refuses a connection, the failure mode matters:
+   * an API outage must not lock the whole playerbase out, so callers
+   * decide the fallback rather than having it decided here.
+   */
   async IsGuildMember(DiscordID: string): Promise<boolean> {
     const Response = await HttpGet(GuildMemberEndpoint(this.Config.DiscordGuildID, DiscordID), this.AuthHeaders());
     if (Response.Status === 200) return true;
@@ -83,6 +109,7 @@ export class DiscordService {
     return `${AvatarCDN}/${Profile.ID}/${Profile.AvatarHash}.png?size=256`;
   }
 
+  /** Bot-token authorisation headers for the Discord API. */
   private AuthHeaders(): Record<string, string> {
     return {
       Authorization: `Bot ${this.Config.DiscordBotToken}`,
@@ -94,11 +121,20 @@ export class DiscordService {
 
 // ── HTTPS helper (node:https; FXServer's bundled Node lacks global fetch) ──
 
+/** Raw HTTP result - body left unparsed so the caller decides how to read it. */
 interface HttpResponse {
   Status: number;
   Body: string;
 }
 
+/**
+ * Minimal promise-wrapped HTTPS GET over Node's `https` module.
+ *
+ * Hand-rolled rather than using a client library because this runs inside
+ * the FXServer Node runtime, where adding a dependency for one call to
+ * the Discord API is not worth the bundle. Resolves on any status - a 401
+ * or 429 is a normal outcome the caller inspects, not a rejection.
+ */
 function HttpGet(Url: string, Headers: Record<string, string>): Promise<HttpResponse> {
   return new Promise((Resolve, Reject) => {
     const Parsed = new URL(Url);
@@ -124,6 +160,11 @@ function HttpGet(Url: string, Headers: Record<string, string>): Promise<HttpResp
   });
 }
 
+/**
+ * Parse a response body, yielding null instead of throwing. Discord can
+ * answer with an HTML error page rather than JSON, which must degrade to
+ * "no profile" rather than taking down the connection handler.
+ */
 function SafeJSONParse(Raw: string): unknown {
   try {
     return JSON.parse(Raw);

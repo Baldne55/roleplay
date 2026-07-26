@@ -27,10 +27,18 @@ import {
   type OutfitData,
 } from './Outfit.js';
 
+/** Character gender. Selects the ped model, so it fixes which appearance and clothing indices are valid. */
 export type Gender = 'Male' | 'Female';
+/** Runtime list of Gender, for validation loops and picker rendering. */
 export const Genders: readonly Gender[] = ['Male', 'Female'];
 
+/** Blood type. Server-private - stamped into blood-splat evidence for forensics, never replicated. */
 export type BloodType = 'A+' | 'A-' | 'B+' | 'B-' | 'AB+' | 'AB-' | 'O+' | 'O-';
+/**
+ * Runtime list of BloodType, used to assign one at creation. Order is the
+ * declaration order, NOT a weighting - real-world blood type frequencies
+ * are not modelled.
+ */
 export const BloodTypes: readonly BloodType[] = [
   'A+',
   'A-',
@@ -42,10 +50,13 @@ export const BloodTypes: readonly BloodType[] = [
   'O-',
 ];
 
+/** Soft-delete state. Deleted rows persist so names and forensic ids stay reserved. */
 export type CharacterStatus = 'Active' | 'Deleted';
 
+/** Injury tier, ascending in severity. Server-owned; the client reads it to gate movement. */
 export type InjuryStatus = 'Healthy' | 'Unconscious' | 'BadlyWounded' | 'Dead';
 
+/** Bleeding tier. Independent of InjuryStatus - a healthy character can bleed, and vice versa. */
 export type BleedingStatus =
   | 'NotBleeding'
   | 'LightBleeding'
@@ -74,6 +85,15 @@ export type OverlayName =
   | 'BodyBlemishes'
   | 'AddBodyBlemishes';
 
+/**
+ * Every head overlay, for iteration when applying or validating a full
+ * appearance. Order carries no meaning - the native's overlay index comes
+ * from the explicit OverlayNativeID lookup, never from array position -
+ * so this may be reordered safely.
+ *
+ * Distinct from CreatorOverlayNames / BarberOverlayNames below, which are
+ * the subsets each editing surface exposes; this is the complete set.
+ */
 export const OverlayNames: readonly OverlayName[] = [
   'Blemishes',
   'FacialHair',
@@ -138,6 +158,11 @@ export type FaceFeatureName =
   | 'ChinHole'
   | 'NeckThickness';
 
+/**
+ * Every face-feature morph, for iteration when applying or validating an
+ * appearance. As with OverlayNames, order is not significant: the native
+ * slot comes from FaceFeatureNativeID(Name), not from array position.
+ */
 export const FaceFeatureNames: readonly FaceFeatureName[] = [
   'NoseWidth',
   'NosePeakHeight',
@@ -173,6 +198,11 @@ export function FaceFeatureNativeID(Name: FaceFeatureName): number {
  * "McDonald" - flag if/when we want to relax.
  */
 export const NameRegex = /^[A-Z][a-z]+$/;
+/**
+ * Inclusive length bounds per name PART, checked alongside NameRegex.
+ * Needed separately because the regex bounds shape but not length - it
+ * would accept a single 200-character run of lowercase letters.
+ */
 export const NameMinLength = 2;
 export const NameMaxLength = 32;
 
@@ -192,6 +222,12 @@ export const MaxWeightKg = 200;
  * spoken IDs stay unambiguous (no 0/O, no 1/I/L confusion).
  */
 export const ForensicIDCharset = '0123456789ABCDEFGHJKMNPQRSTVWXYZ';
+/**
+ * Characters per forensic ID. Ten of the 32-symbol charset is ~50 bits -
+ * far past collision risk at this scale, and the generator re-rolls on
+ * conflict anyway, so the length is chosen for legibility when spoken or
+ * written down rather than for entropy.
+ */
 export const ForensicIDLength = 10;
 
 /**
@@ -367,6 +403,11 @@ export interface SliderDef {
   RandomMax?: number;
 }
 
+/**
+ * One page of the character creator. The wizard renders whatever this
+ * array describes, so adding an appearance control means adding a
+ * SliderDef here rather than editing CreatorView.
+ */
 export interface PageDef {
   PageId: string;
   Name: string;
@@ -377,8 +418,20 @@ export interface PageDef {
   IsFinal?: boolean;
 }
 
+/**
+ * Highest valid parent index - derived from the label list rather than
+ * hard-coded, so adding a heritage face automatically widens every
+ * heritage slider's range and its random range with it.
+ */
 const ParentMax = HeritageFaceLabels.length - 1;
 
+/**
+ * A heritage parent-selection slider: an integer index into the GTA
+ * parent face set, labelled with names rather than numbers.
+ *
+ * No Random range - heritage is rerolled as a set by RandomSliderValues,
+ * not per slider, so that the two parents and the blend stay coherent.
+ */
 function FaceSlider(Id: string, Label: string): SliderDef {
   return {
     Id,
@@ -392,10 +445,22 @@ function FaceSlider(Id: string, Label: string): SliderDef {
   };
 }
 
+/**
+ * A symmetric facial-feature morph on [-100, 100], where 0 is neutral.
+ *
+ * The full range is also the random range, so a randomised face uses the
+ * whole expressive space rather than hugging the centre.
+ */
 function MorphSlider(Id: string, Label: string): SliderDef {
   return { Id, Label, Min: -100, Max: 100, Step: 1, RandomMin: -100, RandomMax: 100 };
 }
 
+/**
+ * Wizard page 1 - parentage and base skin. `IsFirst` marks it as the
+ * entry point; the mix sliders default to 50 so an untouched character
+ * starts as an even blend of the two chosen parents rather than a copy
+ * of one.
+ */
 const HeritagePage: PageDef = {
   PageId: 'Heritage',
   Name: 'Heritage',
@@ -423,6 +488,11 @@ const HeritagePage: PageDef = {
   ],
 };
 
+/**
+ * The symmetric-morph pages, split by facial region purely so no single
+ * page carries an unscrollable wall of sliders. Every entry is a
+ * MorphSlider, so all of them share the [-100, 100] range.
+ */
 const FacialFeaturePages: PageDef[] = [
   {
     PageId: 'UpperFace',
@@ -470,6 +540,13 @@ const FacialFeaturePages: PageDef[] = [
   },
 ];
 
+/**
+ * Skin-detail overlays (blemishes, ageing, freckles...). Sliders are
+ * generated from CreatorOverlayNames rather than listed, so an overlay
+ * added to that list appears here automatically with its range derived
+ * from its own label table. Every entry gets HasOpacity - these are
+ * blended layers, not discrete choices.
+ */
 const AppearancesPage: PageDef = {
   PageId: 'Appearances',
   Name: 'Appearances',
@@ -502,6 +579,12 @@ export const CameraSliders: readonly SliderDef[] = [
   { Id: 'CameraSlide', Label: 'Camera Slide', Min: -0.3, Max: 0.3, Step: 0.025 },
 ];
 
+/**
+ * Display names for overlay pages in the barber flow. A full Record over
+ * OverlayName rather than a partial map, so adding an overlay is a
+ * compile error here until it is given a label - which is what stops a
+ * new overlay from surfacing to players as its raw PascalCase key.
+ */
 const BarberOverlayPageLabels: Record<OverlayName, string> = {
   Blemishes: 'Blemishes',
   FacialHair: 'Facial Hair',
@@ -541,6 +624,13 @@ function BarberOverlaySlider(Name: OverlayName, RandomMin: number): SliderDef {
   };
 }
 
+/**
+ * Build the hair page for a gender.
+ *
+ * Constructed rather than declared because the two ped models expose
+ * different hairstyle sets, so both the option count and the value labels
+ * depend on gender.
+ */
 function BuildHairPage(Gender: Gender): PageDef {
   const HairList = HairListByGender(Gender);
   const HairLabels = HairList.map((H) => H.Name);
@@ -580,6 +670,7 @@ function BuildHairPage(Gender: Gender): PageDef {
   };
 }
 
+/** Build the hair-decal page for a gender; gender-dependent for the same reason as the hair page. */
 function BuildHairDecalsPage(Gender: Gender): PageDef {
   const DecalLabels = HairDecalNamesByGender(Gender);
   return {
@@ -599,6 +690,11 @@ function BuildHairDecalsPage(Gender: Gender): PageDef {
   };
 }
 
+/**
+ * Barber page: beard style and colour. Male-only, like ChestHairPage -
+ * both are spread in conditionally on the Male branch of the page
+ * builder, so the Female page set omits them entirely.
+ */
 const FacialHairPage: PageDef = {
   PageId: 'FacialHair',
   Name: 'Facial Hair',
@@ -606,6 +702,7 @@ const FacialHairPage: PageDef = {
   Sliders: [BarberOverlaySlider('FacialHair', 0)],
 };
 
+/** Barber page: eyebrow style and colour. */
 const EyebrowsPage: PageDef = {
   PageId: 'Eyebrows',
   Name: 'Eyebrows',
@@ -624,6 +721,7 @@ const EyebrowsPage: PageDef = {
   ],
 };
 
+/** Barber page: chest hair. Male-only; omitted from the Female page set. */
 const ChestHairPage: PageDef = {
   PageId: 'ChestHair',
   Name: 'Chest Hair',
@@ -822,6 +920,7 @@ export function AppearanceToSliderValues(Data: AppearanceData): SliderValues {
   return Values;
 }
 
+/** Read a slider value as a rounded integer, falling back if absent or non-finite. */
 function GetInt(Values: SliderValues, Key: string, Fallback: number): number {
   const Raw = Values[Key];
   return typeof Raw === 'number' && Number.isFinite(Raw) ? Math.round(Raw) : Fallback;
@@ -839,6 +938,15 @@ function GetMorph(Values: SliderValues, Key: string, Fallback: number): number {
   return typeof Raw === 'number' && Number.isFinite(Raw) ? Raw / 100 : Fallback;
 }
 
+/**
+ * Deep-copy appearance data by hand.
+ *
+ * Explicit rather than `structuredClone` because this compiles into the
+ * FiveM client and server runtimes as well as the browser, and the global
+ * is not dependable across all three. Writing the fields out also makes
+ * the copy fail to compile if the shape gains a nested field, which a
+ * generic clone would silently alias instead.
+ */
 function StructuredCloneAppearance(Data: AppearanceData): AppearanceData {
   return {
     Heritage: {
@@ -954,18 +1062,32 @@ export interface CreatorCameraBase {
   Depth: number;
   Height: number;
 }
+/**
+ * Per-gender camera anchor for the creator preview. Only Height differs:
+ * the two freemode peds have different eye heights, so a shared value
+ * frames one of them off-centre.
+ */
 export const CreatorCameraBaseByGender: Record<Gender, CreatorCameraBase> = {
   Male: { Offset: 0, Depth: 0.4, Height: 0.6875 },
   Female: { Offset: 0, Depth: 0.4, Height: 0.775 },
 };
+/** Field of view for the creator camera, in degrees. */
 export const CreatorCameraFov = 60;
 
-/** Inclusive integer in [Min, Max]. */
+/**
+ * Inclusive integer in [Min, Max].
+ *
+ * Math.random-backed and therefore NOT suitable for anything an attacker
+ * could profit from predicting. Despite the name, this is unrelated to
+ * node's `crypto.randomInt` - serials, forensic IDs and phone numbers use
+ * that one via IdentifierService / ForensicIDService. This exists for
+ * cosmetic randomisation (the appearance randomiser) only.
+ */
 export function RandomInt(Min: number, Max: number): number {
   return Math.floor(Math.random() * (Max - Min + 1)) + Min;
 }
 
-/** Float in [Min, Max]. */
+/** Float in [Min, Max]. Same cosmetic-only caveat as RandomInt above. */
 export function RandomFloat(Min: number, Max: number): number {
   return Math.random() * (Max - Min) + Min;
 }

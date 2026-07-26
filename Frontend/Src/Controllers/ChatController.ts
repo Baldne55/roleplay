@@ -1,9 +1,9 @@
 import { NetEvents, type NetEventPayloads } from '@Shared/Events/NetEvents.js';
 import { NUIEvents } from '@Shared/Events/NUIEvents.js';
-import { NametagBagKeys } from '@Shared/Constants/Nametag.js';
 import { Logger } from '@/Util/Logger.js';
 import type { NuiService } from '@/Services/NuiService.js';
 
+/* eslint-disable @typescript-eslint/naming-convention -- CitizenFX engine surface: names fixed by the runtime */
 declare function onNet<T extends (...Args: never[]) => void>(EventName: string, Callback: T): void;
 declare function emitNet(EventName: string, ...Args: unknown[]): void;
 declare function RegisterCommand(
@@ -17,9 +17,7 @@ declare function RegisterKeyMapping(
   DefaultMapper: string,
   DefaultParameter: string,
 ): void;
-declare const LocalPlayer: {
-  state: { set: (Key: string, Value: unknown, Replicated: boolean) => void };
-};
+/* eslint-enable @typescript-eslint/naming-convention */
 
 /**
  * Frontend bridge for chat. Three concerns:
@@ -102,15 +100,13 @@ export class ChatController {
       // what we want for chat input.
       const On = Data?.On === true;
       this.Nui.Focus(On, false);
-      // Mirror the focus into the replicated IsTyping bag so remote
-      // clients can render the `[...]` typing indicator above this
-      // player's nametag. The bag flips off the moment focus drops, so
-      // the indicator never lingers past the actual input session.
-      try {
-        LocalPlayer.state.set(NametagBagKeys.IsTyping, On, true);
-      } catch {
-        // No state-bag surface in headless dev runs - silently ignore.
-      }
+      // Tell the server the input gained/lost focus; it writes the
+      // replicated `Roleplay:Nametag:IsTyping` bag itself so the
+      // `Roleplay:` namespace stays server-owned (the anti-cheat tamper
+      // watch flags any client write to it). The server flips the bag
+      // off the moment focus drops, so the indicator never lingers.
+      const Payload: NetEventPayloads[typeof NetEvents.ChatTypingState] = { On };
+      emitNet(NetEvents.ChatTypingState, Payload);
     });
 
     RegisterCommand(

@@ -1,3 +1,24 @@
+<!--
+  Character roster - the surface between signing in and entering the
+  world. Lists the account's Active characters and takes the one click
+  that spawns the chosen one.
+
+  The list is fetched rather than passed in, because this view is
+  reachable twice in a session: once after auth, and again after a
+  /logout returns the player here with a roster that may have changed.
+  `onMounted` refetches on `Idle` or `Failed` but not on `Loaded`, so the
+  common return trip reuses the cached roster while a previously failed
+  load gets a fresh attempt.
+
+  Spawning is single-flight. `List.SelectingID` holds the character being
+  spawned and disables every Play button on the page, not just the one
+  clicked - two spawn requests in flight would have the server attach two
+  runtimes to one session. The store clears it on failure so the roster
+  becomes interactive again.
+
+  Deleted characters never appear: the server sends only Active rows, so
+  there is no soft-delete filtering to do on this side.
+-->
 <script setup lang="ts">
 import { computed, onMounted } from 'vue';
 import { useRouter } from 'vue-router';
@@ -6,27 +27,46 @@ import Card from 'primevue/card';
 import Message from 'primevue/message';
 import { IconPlus, IconPlayerPlay, IconUserCircle } from '@tabler/icons-vue';
 import type { CharacterSummary } from '@Shared/Constants/Character';
-import { useCharacterListStore } from '@/Stores/CharacterList';
+import { UseCharacterListStore } from '@/Stores/CharacterList';
 
-const List = useCharacterListStore();
+const List = UseCharacterListStore();
 const Router = useRouter();
 
+/** Roster fetch in flight. */
 const IsLoading = computed<boolean>(() => List.Status === 'Loading');
+/** Loaded but empty - distinct from still-loading, which shows a spinner instead. */
 const IsEmpty = computed<boolean>(
   () => List.Status === 'Loaded' && List.Characters.length === 0,
 );
 
+/**
+ * Enter the world as `ID`. The guard is a second line of defence behind
+ * the buttons' `:disabled` binding - a keyboard-driven double activation
+ * can fire twice before Vue flushes the disabled attribute.
+ */
 function PlayCharacter(ID: string): void {
   if (List.SelectingID !== null) return;
   void List.Select(ID);
 }
 
+/**
+ * Leave for step 1 of the creation wizard. The rejection is swallowed
+ * because vue-router rejects the promise on a cancelled navigation, which
+ * here just means the player clicked twice - not an error worth surfacing.
+ */
 function CreateNewCharacter(): void {
   Router.push('/Character/Details').catch(() => {
     /* navigation guard cancels are silent */
   });
 }
 
+/**
+ * Render a last-login stamp as a short local date.
+ *
+ * Handles both "never played" (null) and an unparseable stamp, so a bad
+ * value from the server degrades to "Unknown" rather than printing
+ * "Invalid Date" on the roster.
+ */
 function FormatLastLogin(Iso: string | null): string {
   if (Iso === null) return 'Never played';
   const When = new Date(Iso);
@@ -39,6 +79,7 @@ function FormatLastLogin(Iso: string | null): string {
   });
 }
 
+/** Slot label for the roster row. Slots are 1-based and account-scoped. */
 function SlotLabel(Char: CharacterSummary): string {
   return `Slot ${Char.SlotID}`;
 }

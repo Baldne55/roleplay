@@ -1,23 +1,29 @@
 import {
   NametagBagKeys,
   NametagColors,
+  NametagCullMarginMeters,
   NametagDamageFlashMs,
   NametagHeadOffsetZ,
   NametagLosIntervalMs,
   NametagMaxDistance,
   NametagMaxScale,
   NametagMinScale,
+  NametagSnapshotIntervalMs,
 } from '@Shared/Constants/Nametag.js';
 import { NetEvents } from '@Shared/Events/NetEvents.js';
 import { Logger } from '@/Util/Logger.js';
 
+/* eslint-disable @typescript-eslint/naming-convention -- CitizenFX engine surface: names fixed by the runtime */
 declare function onNet<T extends (...Args: never[]) => void>(EventName: string, Callback: T): void;
 declare function setTick(Callback: () => void): number;
 declare function GetActivePlayers(): number[];
 declare function PlayerId(): number;
 declare function GetPlayerPed(PlayerSrc: number | string): number;
 declare function GetPlayerServerId(PlayerId: number): number;
-declare function GetEntityHealth(Entity: number): number;
+declare function GetEntityCoords(
+  Entity: number,
+  Alive: boolean,
+): [number, number, number] & { x: number; y: number; z: number };
 declare function GetPedBoneCoords(
   Ped: number,
   BoneId: number,
@@ -63,23 +69,45 @@ declare function BeginTextCommandDisplayText(Text: string): void;
 declare function AddTextComponentSubstringPlayerName(Text: string): void;
 declare function EndTextCommandDisplayText(X: number, Y: number): void;
 declare const LocalPlayer: {
-  state: {
-    set: (Key: string, Value: unknown, Replicated: boolean) => void;
-    [Key: string]: unknown;
-  };
+  state: { [Key: string]: unknown };
 };
 declare function Player(Source: number | string): {
   state: { [Key: string]: unknown };
 };
+/* eslint-enable @typescript-eslint/naming-convention */
 
 /** Head bone index. SKEL_Head on every freemode ped; lc-rp parity. */
 const HeadBoneIndex = 31086;
 
+/**
+ * Cached line-of-sight verdict for one ped. The raycast is far too
+ * expensive to run per player per frame, so results are held for a short
+ * TTL; `CheckedAt` is what expires them.
+ */
 interface LosEntry {
   Visible: boolean;
   CheckedAt: number;
 }
 
+/**
+ * Cached state-bag read for one player, with the stamp that expires it.
+ * Same motivation as LosEntry - the bag read is cheap but not free, and
+ * nametag data changes far slower than the render tick.
+ */
+interface SnapshotEntry {
+  Snap: RuntimeSnapshot;
+  ReadAt: number;
+}
+
+/**
+ * Everything the overlay needs about one player, lifted out of their
+ * replicated state bag into a plain typed object.
+ *
+ * This is a *view* of server-published state, never a source of truth:
+ * the server writes these bag keys, and a modded client editing its own
+ * copy changes only what its own screen draws. Nothing here is read back
+ * for any gameplay decision.
+ */
 interface RuntimeSnapshot {
   CharacterID: string | null;
   DisplayName: string | null;
@@ -110,13 +138,17 @@ interface RuntimeSnapshot {
  *     `GetActivePlayers()` (engine-streamed roster - already filtered by
  *     routing bucket via OneSync).
  *   - LOS raycasts run on a 300ms cache to avoid per-frame raycast cost.
+ *   - State-bag snapshots run on a 200ms cache for the same reason -
+ *     ~10 bag reads per player per frame would cross the JS<->native
+ *     boundary thousands of times a second for text that never changes
+ *     at frame rate. Head position / distance / fade stay per-frame.
  *   - Distance fades linearly to invisible at 15m; scale linearly drops
  *     from 0.45 (close) to 0.30 (far).
  *   - Local player's nametag only renders when /toggle selfnametag is
  *     on (read from LocalPlayer.state.NametagSelfVisible).
- *   - Damage flash: the local Frontend watches its own ped's HP each
- *     frame. On a drop it writes Date.now() to the replicated bag so
- *     every other client renders the 600ms red flash.
+ *   - Damage flash: written server-side by the Backend's
+ *     weaponDamageEvent hook; this side only reads the bag and
+ *     renders the 600ms red flash.
  *
  * Spawn gate: nothing renders until CharacterSpawned arrives so the
  * auth shell / selector scene stays clean. SessionReturnToSelect /
@@ -126,22 +158,21 @@ export class NametagController {
   private readonly Log = Logger.New('Nametag');
 
   private IsSpawned = false;
-  private LastSelfHealth = 200;
   private readonly Los = new Map<number, LosEntry>();
+  /** ServerId -> cached bag snapshot (NametagSnapshotIntervalMs TTL). */
+  private readonly Snapshots = new Map<number, SnapshotEntry>();
 
   constructor() {
     onNet(NetEvents.CharacterSpawned, (): void => {
       this.IsSpawned = true;
-      this.LastSelfHealth = SafeHealth(GetPlayerPed(-1));
     });
-    onNet(NetEvents.SessionReturnToSelect, (): void => {
+    const ReturnHandler = (): void => {
       this.IsSpawned = false;
       this.Los.clear();
-    });
-    onNet(NetEvents.SessionReturnToAuth, (): void => {
-      this.IsSpawned = false;
-      this.Los.clear();
-    });
+      this.Snapshots.clear();
+    };
+    onNet(NetEvents.SessionReturnToSelect, ReturnHandler);
+    onNet(NetEvents.SessionReturnToAuth, ReturnHandler);
 
     setTick((): void => {
       this.OnTick();
@@ -150,13 +181,19 @@ export class NametagController {
     this.Log.Debug('Tick registered (gated on CharacterSpawned)');
   }
 
+  /**
+   * Per-frame nametag pass over nearby players.
+   *
+   * Culls hardest first, because this runs every frame for every player
+   * on screen: a cheap `GetEntityCoords` distance test rejects the
+   * majority before the more expensive bone lookup and cached raycast are
+   * reached.
+   */
   private OnTick(): void {
     if (!this.IsSpawned) return;
 
     const SelfPed = GetPlayerPed(-1);
     if (SelfPed === 0) return;
-
-    this.PublishDamageFlash(SelfPed);
 
     const Cam = SafeXYZ(GetGameplayCamCoord());
     if (Cam === null) return;
@@ -175,8 +212,22 @@ export class NametagController {
       const ServerId = GetPlayerServerId(Pid);
       if (ServerId <= 0) continue;
 
-      const Snap = ReadSnapshot(ServerId);
+      const Snap = this.SnapshotFor(ServerId);
       if (Snap.CharacterID === null || Snap.DisplayName === null) continue;
+
+      // Cheap pre-cull on the entity origin before resolving the head
+      // bone. GetPedBoneCoords walks the ped's skeleton and was being
+      // paid for every active player every frame, only for most of them
+      // to fail the range test immediately after. The margin covers the
+      // origin-to-head offset so nobody who belongs on screen is culled
+      // by the approximation.
+      const Body = SafeXYZ(GetEntityCoords(Ped, true));
+      if (Body === null) continue;
+      const Bdx = Body.X - Cam.X;
+      const Bdy = Body.Y - Cam.Y;
+      const Bdz = Body.Z - Cam.Z;
+      const CullRange = NametagMaxDistance + NametagCullMarginMeters;
+      if (Bdx * Bdx + Bdy * Bdy + Bdz * Bdz > CullRange * CullRange) continue;
 
       const Head = SafeXYZ(GetPedBoneCoords(Ped, HeadBoneIndex, 0, 0, 0));
       if (Head === null) continue;
@@ -250,35 +301,40 @@ export class NametagController {
   }
 
   /**
-   * Watch the local ped's health. When it drops below the last frame's
-   * reading, write Date.now() to the replicated DamageFlash bag so
-   * every other client renders the 600ms red flash on the local
-   * player's nametag.
-   *
-   * FiveM convention: ped HP is 100..200 (100=dead, 200=full). We
-   * compare on raw HP rather than the "real" 0..100 scale because the
-   * raw value is what the natives return and the delta detection only
-   * needs frame-to-frame monotonicity.
+   * 200ms-cached state-bag snapshot per ServerId. The tag content
+   * (name, status, action, flash stamp) changes on human timescales;
+   * re-reading ten bag keys per player per frame is pure native-
+   * boundary overhead. Worst case a change lands one cache window
+   * late - imperceptible against the 600ms flash and 5s action TTLs.
    */
-  private PublishDamageFlash(SelfPed: number): void {
-    const Current = SafeHealth(SelfPed);
-    if (Current < this.LastSelfHealth) {
-      try {
-        LocalPlayer.state.set(NametagBagKeys.DamageFlash, NowMs(), true);
-      } catch {
-        // Headless dev run - no state bag surface.
-      }
+  private SnapshotFor(ServerId: number): RuntimeSnapshot {
+    const Now = NowMs();
+    const Cached = this.Snapshots.get(ServerId);
+    if (Cached !== undefined && Now - Cached.ReadAt < NametagSnapshotIntervalMs) {
+      return Cached.Snap;
     }
-    this.LastSelfHealth = Current;
+    const Snap = ReadSnapshot(ServerId);
+    this.Snapshots.set(ServerId, { Snap, ReadAt: Now });
+    return Snap;
   }
 }
 
 // ── Pure helpers ─────────────────────────────────────────────────────
 
+/**
+ * Lift one player's nametag bag into a RuntimeSnapshot.
+ *
+ * Every field goes through a coercing reader with a default, because the
+ * bag may be partially populated: a player who has connected but not yet
+ * spawned has no character keys, and a key added in a later version is
+ * simply absent on a session that started before it. A missing key must
+ * degrade to a sensible default, never render `undefined` over someone's
+ * head. A bag read that throws outright yields the empty snapshot.
+ */
 function ReadSnapshot(ServerId: number): RuntimeSnapshot {
   let Bag: Record<string, unknown> = {};
   try {
-    Bag = Player(ServerId).state as unknown as Record<string, unknown>;
+    Bag = Player(ServerId).state;
   } catch {
     return EmptySnapshot();
   }
@@ -296,6 +352,10 @@ function ReadSnapshot(ServerId: number): RuntimeSnapshot {
   };
 }
 
+/**
+ * The all-defaults snapshot: no character, healthy, nothing to show. Used
+ * when a bag read fails so the caller always gets a well-formed object.
+ */
 function EmptySnapshot(): RuntimeSnapshot {
   return {
     CharacterID: null,
@@ -311,6 +371,14 @@ function EmptySnapshot(): RuntimeSnapshot {
   };
 }
 
+/**
+ * Read one of the local player's own display preferences (the /toggle
+ * settings) off their state bag, falling back to `Default`.
+ *
+ * Reads `LocalPlayer.state` rather than `Player(id).state` - these are
+ * the viewer's own choices about what to draw, not published facts about
+ * anyone else.
+ */
 function ReadLocalBool(Key: string, Default: boolean): boolean {
   try {
     const Bag = LocalPlayer.state as unknown as Record<string, unknown>;
@@ -382,16 +450,35 @@ function RenderTower(
   // Each subsequent DrawText call draws at that anchor + (x, y) screen
   // offset. We stack upward by decreasing Y (smaller Y = higher).
   SetDrawOrigin(Head.X, Head.Y, Head.Z + NametagHeadOffsetZ, 0);
-  const LineSpacing = 0.025 * (Scale / NametagMaxScale);
-  for (let I = 0; I < Lines.length; I += 1) {
-    const Y = -I * LineSpacing;
-    const Line = Lines[I];
-    if (Line === undefined) continue;
-    DrawWorldText(Line.Text, Scale, Line.Color, Alpha, Y);
+  try {
+    const LineSpacing = 0.025 * (Scale / NametagMaxScale);
+    for (let I = 0; I < Lines.length; I += 1) {
+      const Y = -I * LineSpacing;
+      const Line = Lines[I];
+      if (Line === undefined) continue;
+      DrawWorldText(Line.Text, Scale, Line.Color, Alpha, Y);
+    }
+  } finally {
+    // Pairs with SetDrawOrigin on every path, throw included: an origin
+    // left set would re-anchor the remaining players' towers (and any
+    // other 2D draw this frame) to THIS player's head position.
+    ClearDrawOrigin();
   }
-  ClearDrawOrigin();
 }
 
+/**
+ * Draw one line of the nametag tower.
+ *
+ * Assumes SetDrawOrigin has already pinned the world position - the
+ * caller sets it once per player and this draws several lines against it,
+ * which is why `YOffset` is relative rather than absolute. Calling this
+ * without an origin set puts text at the screen corner.
+ *
+ * Alpha is folded in as a multiplier over the colour's own alpha so
+ * distance fade composes with a line's intrinsic transparency, and the
+ * drop shadow fades in step - a shadow at full strength behind faded text
+ * reads as a smudge.
+ */
 function DrawWorldText(
   Text: string,
   Scale: number,
@@ -414,6 +501,14 @@ function DrawWorldText(
   EndTextCommandDisplayText(0, YOffset);
 }
 
+/**
+ * OOC line for an incapacitated player, or null when they are fine.
+ *
+ * Deliberately out-of-character (`(( ))`) and phrased about "this
+ * player", not the character: it exists so someone approaching a body
+ * knows not to expect a reply, which is a player-to-player concern rather
+ * than something their character perceives.
+ */
 function InjuryOocLine(Status: string): string | null {
   switch (Status) {
     case 'Unconscious':
@@ -427,16 +522,39 @@ function InjuryOocLine(Status: string): string | null {
   }
 }
 
+/**
+ * Text scale for a nametag at `Dist`, interpolating from NametagMaxScale
+ * at the viewer's feet down to NametagMinScale at the draw limit.
+ *
+ * Shrinking with distance is what keeps a crowded street readable; the
+ * floor stops far tags collapsing into an illegible smear.
+ */
 function DistanceScale(Dist: number): number {
   const T = Math.max(0, Math.min(1, Dist / NametagMaxDistance));
   return NametagMaxScale - T * (NametagMaxScale - NametagMinScale);
 }
 
+/**
+ * Opacity multiplier for a nametag at `Dist` - linear from fully opaque
+ * to fully transparent at the limit, so tags fade out rather than popping
+ * when a player crosses the draw distance.
+ */
 function DistanceAlpha(Dist: number): number {
   const T = Math.max(0, Math.min(1, Dist / NametagMaxDistance));
   return 1 - T;
 }
 
+/**
+ * Normalise a coordinate from either shape the CitizenFX natives return -
+ * a `[x,y,z]` tuple or an `{x,y,z}` object - into PascalCase fields,
+ * returning null if any component is not finite.
+ *
+ * Both shapes genuinely occur depending on the native and the runtime
+ * build, and a non-finite component (from a ped that despawned mid-frame)
+ * would otherwise propagate NaN into the distance maths and place text at
+ * an undefined screen position.
+ */
+/* eslint-disable @typescript-eslint/naming-convention -- CitizenFX engine surface: names fixed by the runtime */
 function SafeXYZ(
   Raw:
     | [number, number, number]
@@ -460,27 +578,30 @@ function SafeXYZ(
   if (!Number.isFinite(X) || !Number.isFinite(Y) || !Number.isFinite(Z)) return null;
   return { X, Y, Z };
 }
+/* eslint-enable @typescript-eslint/naming-convention */
 
-function SafeHealth(Ped: number): number {
-  if (Ped === 0) return 200;
-  try {
-    const Raw = GetEntityHealth(Ped);
-    return Number.isFinite(Raw) ? Raw : 200;
-  } catch {
-    return 200;
-  }
-}
+/*
+ * ── State-bag coercers ───────────────────────────────────────────────
+ *
+ * State-bag values arrive as `unknown`. These three narrow by exact type
+ * rather than coercing, so a key holding the wrong type falls back to the
+ * default instead of rendering something like "[object Object]" over a
+ * player's head. Absent and malformed are treated identically.
+ */
 
+/** Non-empty string, else null. Empty is treated as absent - a blank name is nothing to draw. */
 function AsStringOrNull(V: unknown): string | null {
   if (typeof V === 'string' && V.length > 0) return V;
   return null;
 }
 
+/** Strict boolean, else the default. Never truthiness-tests. */
 function AsBool(V: unknown, Default: boolean): boolean {
   if (typeof V === 'boolean') return V;
   return Default;
 }
 
+/** Finite number, else the default - NaN and Infinity are rejected. */
 function AsNumber(V: unknown, Default: number): number {
   if (typeof V === 'number' && Number.isFinite(V)) return V;
   return Default;

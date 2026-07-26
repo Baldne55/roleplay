@@ -1,7 +1,8 @@
 {
   "name": "@Roleplay/UI",
-  "version": "0.1.0",
+  "version": "0.5.0",
   "private": true,
+  "description": "Vue 3 SPA rendered in the NUI CEF browser (auth, character select/creator, chat overlay). Built by Vite.",
   "type": "module",
   "scripts": {
     "build": "vue-tsc -p tsconfig.json --noEmit && vite build",

@@ -3,10 +3,16 @@ import { NetEvents, type NetEventPayloads } from '@Shared/Events/NetEvents.js';
 import {
   HealthPollIntervalMs,
   HpCriticalThreshold,
+  RegenMaxHpDelta,
 } from '@Shared/Constants/Injury.js';
+import {
+  WithdrawalDrainFloorHp,
+  WithdrawalMaxAbsHpDelta,
+} from '@Shared/Constants/Drugs.js';
 import type { InjuryStatus } from '@Shared/Constants/Character.js';
 import { Logger } from '@/Util/Logger.js';
 
+/* eslint-disable @typescript-eslint/naming-convention -- CitizenFX engine surface: names fixed by the runtime */
 declare function onNet<T extends (...Args: never[]) => void>(EventName: string, Callback: T): void;
 declare function emitNet(EventName: string, ...Args: unknown[]): void;
 declare function setTick(Callback: () => void): number;
@@ -16,7 +22,6 @@ declare function PlayerId(): number;
 declare function GetPlayerServerId(PlayerId: number): number;
 declare function GetEntityHealth(Entity: number): number;
 declare function SetEntityHealth(Entity: number, Health: number): void;
-declare function SetPedArmour(Ped: number, Amount: number): void;
 declare function SetEntityCoordsNoOffset(
   Entity: number,
   X: number,
@@ -27,7 +32,6 @@ declare function SetEntityCoordsNoOffset(
   RagdollFlag: boolean,
 ): void;
 declare function SetEntityHeading(Entity: number, Heading: number): void;
-declare function SetEntityInvincible(Entity: number, Invincible: boolean): void;
 declare function DisableControlAction(PadIndex: number, Control: number, Disable: boolean): void;
 declare function DisableAutomaticRespawn(Toggle: boolean): void;
 declare function IgnoreNextRestart(Toggle: boolean): void;
@@ -50,6 +54,10 @@ declare function TaskPlayAnim(
   LockZ: boolean,
 ): void;
 declare function ClearPedTasksImmediately(Ped: number): void;
+declare function ClearPedBloodDamage(Ped: number): void;
+declare function ResetPedVisibleDamage(Ped: number): void;
+declare function ClearPedWetness(Ped: number): void;
+declare function ClearPedEnvDirt(Ped: number): void;
 declare function AddStateBagChangeHandler(
   KeyFilter: string,
   BagFilter: string,
@@ -64,10 +72,23 @@ declare function AddStateBagChangeHandler(
 declare const LocalPlayer: {
   state: { [Key: string]: unknown };
 };
+/* eslint-enable @typescript-eslint/naming-convention */
 
+/*
+ * Dead-pose animation. Played instead of leaving the ped ragdolled so a
+ * downed character settles into a stable, readable pose that other
+ * players can find and interact with (/helpup), rather than sliding on
+ * terrain.
+ */
 const DeadPoseDict = 'dead';
 const DeadPoseClip = 'dead_a';
+/** High blend-in: the pose should snap, not ease, once death is decided. */
 const DeadPoseBlendIn = 8.0;
+/**
+ * Delay before the pose is applied, letting the engine's own death
+ * ragdoll play out first. Applying immediately fights the ragdoll and the
+ * ped visibly twitches between the two.
+ */
 const DeadPoseStartDelayMs = 500;
 
 /**
@@ -157,6 +178,28 @@ export class InjuryController {
       },
     );
 
+    // Server-driven consumable regen (the medkit's over-time window).
+    // Relative positive delta with the bleeding drain tick's guards
+    // mirrored: malformed or oversized payloads drop on the floor.
+    onNet(
+      NetEvents.InjuryRegenTick,
+      (Payload: NetEventPayloads[typeof NetEvents.InjuryRegenTick]): void => {
+        if (!this.IsSpawned) return;
+        this.ApplyRegenTick(Payload);
+      },
+    );
+
+    // Withdrawal symptom drain. Same relative-delta shape, opposite
+    // sign, with its own (high) floor - withdrawal harasses, the
+    // injury machine is the only road to the ground.
+    onNet(
+      NetEvents.AddictionWithdrawalTick,
+      (Payload: NetEventPayloads[typeof NetEvents.AddictionWithdrawalTick]): void => {
+        if (!this.IsSpawned) return;
+        this.ApplyWithdrawalTick(Payload);
+      },
+    );
+
     const ReturnHandler = (): void => {
       this.IsSpawned = false;
       this.StopHealthPoll();
@@ -195,6 +238,10 @@ export class InjuryController {
 
   // ── Health poll ─────────────────────────────────────────────────────
 
+  /**
+   * Begin sampling local HP and reporting it to the server, which has no
+   * way to observe engine health directly.
+   */
   private StartHealthPoll(): void {
     if (this.PollInterval !== null) return;
     this.PollInterval = setInterval((): void => {
@@ -202,6 +249,7 @@ export class InjuryController {
     }, HealthPollIntervalMs);
   }
 
+  /** Stop the health poll on despawn or character switch. */
   private StopHealthPoll(): void {
     if (this.PollInterval === null) return;
     clearInterval(this.PollInterval);
@@ -211,28 +259,31 @@ export class InjuryController {
   /**
    * Per-tick HP read. GTA's range is 0-200 with 100 as the alive floor;
    * a fully healthy character-column HP of 100 reads as 200 here, and
-   * an HP=0 column reads as 100. We watch for the engine value crossing
-   * below `100 + HpCriticalThreshold` while still server-side Healthy.
-   * Anyone already non-Healthy is held at the HpInjuredFloor by the
-   * server's clamp; their poll is a no-op.
+   * an HP=0 column reads as 100.
+   *
+   *   Healthy: emit when engine HP crosses below `100 + HpCriticalThreshold`.
+   *   Non-Healthy: ped is server-clamped to `HpInjuredFloor + 100 = 105`.
+   *                Any new lethal hit drops engine HP at or below 100
+   *                (the alive floor) - that is the death-cascade signal.
+   *                Emit so the server walks one slot down InjuryProgression.
+   *                The server's `AdvancementCooldownMs` (10 s) absorbs the
+   *                ragdoll-spike that follows the dead pose.
    */
   private PollHealth(): void {
     if (!this.IsSpawned) return;
-    if (this.CurrentStatus !== 'Healthy') return;
     const Ped = PlayerPedId();
     if (Ped === 0) return;
     const Health = GetEntityHealth(Ped);
-    if (Health > 100 + HpCriticalThreshold) return;
-    if (Health <= 100) {
-      // Already at or below the alive floor - the engine is one frame
-      // away from firing native death. Same emit either way; the server
-      // clamps to floor and advances.
+    if (this.CurrentStatus === 'Healthy') {
+      if (Health > 100 + HpCriticalThreshold) return;
+    } else {
+      if (Health > 100) return;
     }
     const Now = Date.now();
     if (Now - this.LastEmitAt < 1000) return;
     this.LastEmitAt = Now;
     emitNet(NetEvents.InjuryHealthCritical);
-    this.Log.Debug(`HealthCritical emitted - hp=${Health}`);
+    this.Log.Debug(`HealthCritical emitted - hp=${Health} status=${this.CurrentStatus}`);
   }
 
   // ── Authoritative HP / position application ─────────────────────────
@@ -240,11 +291,12 @@ export class InjuryController {
   /**
    * Apply a server-sent ped state mutation. HP is in the 0-100
    * character-column range; the GTA native uses 0-200 with 100 as the
-   * alive baseline, so we add the offset before SetEntityHealth. AP
-   * maps 1:1. Teleport, when supplied, uses SetEntityCoordsNoOffset
-   * with all flags false (alive=false here means "not a ragdoll
-   * teleport" - the engine accepts the move on a frozen or alive ped
-   * either way).
+   * alive baseline, so we add the offset before SetEntityHealth.
+   * Armour no longer rides this event - SET_PED_ARMOUR is
+   * apiset-server and the Backend writes it directly. Teleport, when
+   * supplied, uses SetEntityCoordsNoOffset with all flags false
+   * (alive=false here means "not a ragdoll teleport" - the engine
+   * accepts the move on a frozen or alive ped either way).
    */
   private ApplyPedState(
     Payload: NetEventPayloads[typeof NetEvents.InjuryApply],
@@ -253,9 +305,6 @@ export class InjuryController {
     if (Ped === 0) return;
     const Hp = Math.max(0, Math.min(100, Payload.HP));
     SetEntityHealth(Ped, Hp + 100);
-    if (Payload.AP !== undefined) {
-      SetPedArmour(Ped, Math.max(0, Math.min(100, Payload.AP)));
-    }
     if (Payload.Teleport !== undefined) {
       SetEntityCoordsNoOffset(
         Ped,
@@ -273,11 +322,61 @@ export class InjuryController {
     );
   }
 
+  /**
+   * Apply one server-instructed regen tick. The delta is relative so
+   * it composes with damage taken while the instruction was in flight
+   * (the drain tick's rationale, mirrored). Ceiling 200 is the
+   * engine's full-health value; the non-Healthy guard drops ticks
+   * that land mid-collapse so the server's injured-floor clamp stays
+   * authoritative.
+   */
+  private ApplyRegenTick(
+    Payload: NetEventPayloads[typeof NetEvents.InjuryRegenTick],
+  ): void {
+    const HpDelta = Number(Payload.HpDelta);
+    if (!Number.isFinite(HpDelta) || HpDelta <= 0 || HpDelta > RegenMaxHpDelta) {
+      this.Log.Warn(`RegenTick rejected - malformed HpDelta=${String(Payload.HpDelta)}`);
+      return;
+    }
+    if (this.CurrentStatus !== 'Healthy') return;
+    const Ped = PlayerPedId();
+    if (Ped === 0) return;
+    SetEntityHealth(Ped, Math.min(200, GetEntityHealth(Ped) + HpDelta));
+  }
+
+  /**
+   * Apply one withdrawal drain. The floor sits far above the injury
+   * thresholds and is checked BEFORE applying - a ped that combat
+   * already pushed below it skips the tick entirely rather than
+   * being healed up to the floor by Math.max.
+   */
+  private ApplyWithdrawalTick(
+    Payload: NetEventPayloads[typeof NetEvents.AddictionWithdrawalTick],
+  ): void {
+    const HpDelta = Number(Payload.HpDelta);
+    if (!Number.isFinite(HpDelta) || HpDelta >= 0 || -HpDelta > WithdrawalMaxAbsHpDelta) {
+      this.Log.Warn(`WithdrawalTick rejected - malformed HpDelta=${String(Payload.HpDelta)}`);
+      return;
+    }
+    if (this.CurrentStatus !== 'Healthy') return;
+    const Ped = PlayerPedId();
+    if (Ped === 0) return;
+    const EngineFloor = WithdrawalDrainFloorHp + 100;
+    const Current = GetEntityHealth(Ped);
+    if (Current <= EngineFloor) return;
+    SetEntityHealth(Ped, Math.max(EngineFloor, Current + HpDelta));
+  }
+
   // ── Incapacitated visual state ──────────────────────────────────────
 
+  /**
+   * Apply the downed state: ragdoll the ped and start suppressing the
+   * controls a wounded character should not have.
+   *
+   * Driven by the server's replicated injury status, never by local HP -
+   * a client deciding for itself when it is downed could simply decline.
+   */
   private EnterIncapacitated(): void {
-    const Ped = PlayerPedId();
-    if (Ped !== 0) SetEntityInvincible(Ped, true);
     this.StartSuppressionTick();
     setTimeout((): void => {
       // Re-check on the deferred path: if the server flipped us back
@@ -289,7 +388,7 @@ export class InjuryController {
       if (!HasAnimDictLoaded(DeadPoseDict)) {
         RequestAnimDict(DeadPoseDict);
         // Best-effort: even if the dict is not loaded yet TaskPlayAnim
-        // is harmless. The suppression tick and invincibility cover us
+        // is harmless. The suppression tick covers the WASTED cycle
         // until the engine catches up.
       }
       TaskPlayAnim(
@@ -308,17 +407,42 @@ export class InjuryController {
     }, DeadPoseStartDelayMs);
   }
 
+  /** Restore normal control on revive, clearing ragdoll and suppression. */
   private ExitIncapacitated(): void {
     const Ped = PlayerPedId();
     if (Ped !== 0) {
       ClearPedTasksImmediately(Ped);
-      SetEntityInvincible(Ped, false);
+      this.ClearVisibleDamage(Ped);
     }
     this.StopSuppressionTick();
   }
 
+  /**
+   * Wipe accumulated ped visual damage on revival. Restoring HP does
+   * NOT clear blood overlays, impact decals, wetness, or environmental
+   * dirt in GTA - they persist on the model independent of health - so
+   * a revived player would otherwise still look freshly shot. Called
+   * from ExitIncapacitated, the single non-Healthy -> Healthy edge that
+   * every revive path (/helpup, /arevive, the dying-while-Dead
+   * auto-respawn) flips through. Deliberately does NOT touch ped
+   * decorations (ClearPedDecorations) - that would strip tattoos / hair
+   * owned by PedDressingService.
+   */
+  private ClearVisibleDamage(Ped: number): void {
+    ClearPedBloodDamage(Ped);
+    ResetPedVisibleDamage(Ped);
+    ClearPedWetness(Ped);
+    ClearPedEnvDirt(Ped);
+  }
+
   // ── Suppression tick ────────────────────────────────────────────────
 
+  /**
+   * Begin per-frame control suppression.
+   *
+   * Must run every frame: the engine re-enables controls continuously, so
+   * disabling them once has no lasting effect.
+   */
   private StartSuppressionTick(): void {
     if (this.SuppressionTick !== null) return;
     this.SuppressionTick = setTick((): void => {
@@ -336,6 +460,7 @@ export class InjuryController {
     });
   }
 
+  /** End control suppression, returning the ped to normal input. */
   private StopSuppressionTick(): void {
     if (this.SuppressionTick === null) return;
     clearTick(this.SuppressionTick);
@@ -353,6 +478,11 @@ function ReadLocalInjuryStatus(): InjuryStatus {
   return NormaliseInjuryStatus(Raw);
 }
 
+/**
+ * Coerce a replicated injury-status bag value to a known state,
+ * defaulting to healthy - same absent-during-join reasoning as the
+ * bleeding controller's equivalent.
+ */
 function NormaliseInjuryStatus(Raw: unknown): InjuryStatus {
   if (
     Raw === 'Healthy' ||

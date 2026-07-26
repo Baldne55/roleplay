@@ -9,6 +9,17 @@
 import { Sequelize } from 'sequelize-typescript';
 import type { ServerConfig } from '@/Infrastructure/Config/ServerConfig.js';
 
+/**
+ * Build the application's Sequelize connection from resolved config.
+ *
+ * One instance for the process lifetime, constructed in Bootstrap and
+ * threaded into the repositories - InventoryService also holds it
+ * directly, since it opens explicit transactions around composite
+ * mutations.
+ *
+ * Distinct from the throwaway connection MigrationBoot creates: that one
+ * runs before models are registered and is closed immediately after.
+ */
 export function CreateSequelize(Config: ServerConfig): Sequelize {
   return new Sequelize({
     dialect: 'mysql',

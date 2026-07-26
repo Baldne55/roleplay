@@ -1,6 +1,6 @@
 import { ChatColor, ChatFormatter } from '@Shared/Chat/Index.js';
 import type { CommandCategory, CommandResult } from '@/Services/CommandTypes.js';
-import { CommandRegistry } from '@/Services/CommandRegistry.js';
+import type { CommandRegistry } from '@/Services/CommandRegistry.js';
 
 /**
  * Core / utility commands - the always-on surface that doesn't belong

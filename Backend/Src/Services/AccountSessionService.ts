@@ -24,6 +24,11 @@ export class AccountSessionService {
   private readonly AccountToSource = new Map<string, number>();
   private readonly SourceToAccount = new Map<number, string>();
 
+  /**
+   * Bind an account to a Source, so a second connection with the same
+   * account can be detected and refused rather than running two sessions
+   * against one identity.
+   */
   Claim(AccountID: string, Source: number): void {
     const Previous = this.AccountToSource.get(AccountID);
     if (Previous !== undefined && Previous !== Source) {
@@ -40,6 +45,11 @@ export class AccountSessionService {
     this.Log.Debug(`Claimed account=${AccountID} for source=${Source}`);
   }
 
+  /**
+   * Release a Source's claim on disconnect or logout. Must run on every
+   * exit path - a stale claim locks the player out of their own account
+   * until the process restarts.
+   */
   Release(Source: number): void {
     const AccountID = this.SourceToAccount.get(Source);
     if (AccountID === undefined) return;

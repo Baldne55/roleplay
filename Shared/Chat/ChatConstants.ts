@@ -14,8 +14,33 @@
  * across name + verb + body. See ChatFormatter for the per-channel
  * branches.
  */
+/**
+ * Longest chat line a player may submit, in characters.
+ *
+ * Shared deliberately: the UI enforces it on the input (`maxlength` plus
+ * a paste truncation) and the Backend re-checks it on arrival, and the
+ * two must not drift. They were independent literals in two workspaces -
+ * raise one alone and players either get silently truncated input or a
+ * rejection for a line the box let them type.
+ *
+ * The Backend measures AFTER Sanitize + trim, so its check can only ever
+ * be more permissive than the box; the client bound is the real ceiling.
+ */
+export const ChatBodyMaxLength = 240;
+
+/** Speech channel. Determines both proximity range and the line's colour tint. */
 export type ChatType = 'Say' | 'Shout' | 'Whisper' | 'Low' | 'Ooc';
 
+/**
+ * Audible radius per channel, in metres. The single source of truth for
+ * proximity - commands reference `ChatRanges[Type]` rather than repeating
+ * a literal, so the ranges quoted in every command's Description and the
+ * ranges actually broadcast cannot drift apart.
+ *
+ * Ooc is 15 rather than Say's 10 on purpose: an out-of-character aside
+ * should reach the whole scene a player is part of, including anyone just
+ * outside speaking distance.
+ */
 export const ChatRanges: Record<ChatType, number> = {
   Say: 10,
   Shout: 25,
@@ -24,6 +49,11 @@ export const ChatRanges: Record<ChatType, number> = {
   Ooc: 15,
 };
 
+/**
+ * Third-person verb inserted between speaker and body ("Name says: ...").
+ * Ooc is deliberately empty - OOC lines render through the bracket
+ * formatter, which supplies its own framing and never uses a verb.
+ */
 export const ChatVerbs: Record<ChatType, string> = {
   Say: 'says',
   Shout: 'shouts',

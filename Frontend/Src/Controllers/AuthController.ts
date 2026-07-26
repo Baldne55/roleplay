@@ -4,8 +4,10 @@ import { Logger } from '@/Util/Logger.js';
 import type { NuiService } from '@/Services/NuiService.js';
 import type { SpawnService } from '@/Services/SpawnService.js';
 
+/* eslint-disable @typescript-eslint/naming-convention -- CitizenFX engine surface: names fixed by the runtime */
 declare function onNet<T extends (...Args: never[]) => void>(EventName: string, Callback: T): void;
 declare function emitNet(EventName: string, ...Args: unknown[]): void;
+/* eslint-enable @typescript-eslint/naming-convention */
 
 /**
  * Client-side auth orchestration. Pure passthrough between server
@@ -64,6 +66,10 @@ export class AuthController {
     this.Log.Debug('Handlers registered (AuthInit, AuthPrepared, AuthSuccess, AuthFailure, NUI AuthFinalize)');
   }
 
+  /**
+   * Build the pre-spawn skybox shell and show the sign-in card, on the
+   * server's cue. The first thing a joining player sees.
+   */
   private async HandleAuthInit(Payload: NetEventPayloads[typeof NetEvents.AuthInit]): Promise<void> {
     await this.Spawn.PrepareAuthShell(Payload.SpawnCoord, Payload.Camera);
     this.Nui.ShowAuth();

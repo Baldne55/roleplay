@@ -1,6 +1,7 @@
 import { defineStore } from 'pinia';
 import { ref } from 'vue';
 
+/** Sign-in state machine. The store doc below defines what each phase means. */
 export type AuthPhase = 'Idle' | 'Prepared' | 'Submitting' | 'Authenticated' | 'Failed';
 
 /**
@@ -17,7 +18,7 @@ export type AuthPhase = 'Idle' | 'Prepared' | 'Submitting' | 'Authenticated' | '
  *                    /Character/Select (has characters) or /Character/Details (zero).
  *   Failed         - finalize rejected; Reason populated. User can retry.
  */
-export const useAuthStore = defineStore('Auth', () => {
+export const UseAuthStore = defineStore('Auth', () => {
   const Phase = ref<AuthPhase>('Idle');
   const Reason = ref<string | null>(null);
   const DiscordDisplayName = ref<string | null>(null);

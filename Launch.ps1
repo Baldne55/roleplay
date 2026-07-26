@@ -1,4 +1,10 @@
-# Launch the FXServer with our committed server.cfg.
+# Launch the FXServer against the local server.cfg.
+#
+# server.cfg is deliberately NOT committed - it is in .gitignore because it
+# carries the Discord bot token and the database password. Only
+# server.cfg.example is tracked; copy it and fill in the REPLACE_WITH_*
+# values. Never commit the filled-in copy.
+#
 # CWD must be the FXServer install dir for resource discovery (resources/[local]/roleplay).
 $ErrorActionPreference = 'Stop'
 

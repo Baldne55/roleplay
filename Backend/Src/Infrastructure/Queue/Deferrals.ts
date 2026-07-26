@@ -22,12 +22,27 @@ export interface Deferrals {
  * done). Wrap it so internal callers can use our PascalCase API without
  * touching the raw camelCase surface anywhere else.
  */
+/* eslint-disable @typescript-eslint/naming-convention -- CitizenFX engine surface: names fixed by the runtime */
+/**
+ * The deferral object FXServer hands to a `playerConnecting` handler,
+ * with its original lowercase native names.
+ *
+ * `defer()` must be called before any await, or the connection proceeds
+ * without waiting; `done()` with a reason rejects the player, without one
+ * admits them.
+ */
 export interface RawDeferrals {
   defer: () => void;
   update: (Message: string) => void;
   done: (Reason?: string) => void;
 }
+/* eslint-enable @typescript-eslint/naming-convention */
 
+/**
+ * Adapt the engine's lowercase deferral object to the house PascalCase
+ * interface, so the rest of the codebase never touches the raw native
+ * shape and the connection flow stays unit-testable behind a fake.
+ */
 export function WrapDeferrals(Raw: RawDeferrals): Deferrals {
   return {
     Defer: () => Raw.defer(),

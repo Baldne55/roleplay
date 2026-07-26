@@ -1,5 +1,11 @@
 @echo off
-REM Launch the FXServer with our committed server.cfg.
+REM Launch the FXServer against the local server.cfg.
+REM
+REM server.cfg is deliberately NOT committed - it is in .gitignore because
+REM it carries the Discord bot token and the database password. Only
+REM server.cfg.example is tracked; copy it and fill in the REPLACE_WITH_*
+REM values. Never commit the filled-in copy.
+REM
 REM CWD must be the FXServer install dir for resource discovery.
 
 set "REPO=%~dp0"

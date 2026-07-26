@@ -1,5 +1,5 @@
 import type { CommandResult } from '@/Services/CommandTypes.js';
-import { CommandRegistry } from '@/Services/CommandRegistry.js';
+import type { CommandRegistry } from '@/Services/CommandRegistry.js';
 import type { PlayerSessionService } from '@/Services/PlayerSessionService.js';
 
 /**

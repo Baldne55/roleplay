@@ -1,6 +1,6 @@
 import { ChatFormatter } from '@Shared/Chat/Index.js';
 import type { CommandResult } from '@/Services/CommandTypes.js';
-import { CommandRegistry } from '@/Services/CommandRegistry.js';
+import type { CommandRegistry } from '@/Services/CommandRegistry.js';
 import type { InjuryService } from '@/Services/InjuryService.js';
 import type { PlayerStateService } from '@/Services/PlayerStateService.js';
 import type { ProximityBroadcaster } from '@/Services/ProximityBroadcaster.js';
@@ -14,8 +14,10 @@ import type { AccountRepository } from '@/Data/Repositories/AccountRepository.js
  *                   Available in Unconscious, BadlyWounded, Dead.
  *   /helpup       - bystander lifts an unconscious player to HP=50
  *                   within 3 m. Caller must be Healthy themselves.
- *                   Auto-narrates `* Issuer helps Target up.` purple at
- *                   Say range; the broadcast is fired by InjuryService.
+ *                   Floats `* Issuer helps Target up.` above the
+ *                   issuer's head via the /ame nametag channel (fired
+ *                   by InjuryService); the command Reply is a personal
+ *                   Info confirmation.
  *   /arevive      - admin full restore to Healthy + HP=100. AdminDuty
  *                   gated by the dispatcher (RequiredStaffLevel +
  *                   SkipDutyCheck=false), no proximity. OOC toast only,
@@ -96,9 +98,9 @@ export function Register(
       const Result = await Injury.HelpUp(Ctx.Source, Target);
       if (!Result.Ok) return { Outcome: 'BadArgs', Reason: Result.Reason };
 
-      // The proximity broadcast was already fired by InjuryService; the
-      // command-side Reply is a personal Info confirmation so the issuer
-      // sees a non-narration line that they actually did help.
+      // The action float was already set on the issuer by InjuryService;
+      // the command-side Reply is a personal Info confirmation so the
+      // issuer sees a non-narration line that they actually did help.
       return {
         Outcome: 'Ok',
         Reply: ChatFormatter.Info(`You helped ${Result.TargetName} up.`),

@@ -16,6 +16,11 @@ declare function SetPlayerRoutingBucket(PlayerSrc: string, Bucket: number): void
 export class RoutingBucketService {
   private readonly Log = Logger.New('Routing');
 
+  /**
+   * Put a connecting player in their own private bucket for the auth
+   * shell, so the skybox is not shared and they cannot see or be seen by
+   * anyone in the world before choosing a character.
+   */
   AssignAuthBucket(Source: number): number {
     const Bucket = Source + AuthBucketOffset;
     SetPlayerRoutingBucket(String(Source), Bucket);
@@ -23,6 +28,11 @@ export class RoutingBucketService {
     return Bucket;
   }
 
+  /**
+   * Move a spawning player into the shared world bucket. The moment they
+   * become visible to everyone else - and the moment proximity chat,
+   * nametags and drops start applying to them.
+   */
   MoveToWorld(Source: number): void {
     SetPlayerRoutingBucket(String(Source), 0);
     this.Log.Debug(`Bucket -> world (0) - source=${Source}`);

@@ -4,8 +4,10 @@ import type { AccountSettings } from '@Shared/Constants/AccountSettings.js';
 import { Logger } from '@/Util/Logger.js';
 import type { NuiService } from '@/Services/NuiService.js';
 
+/* eslint-disable @typescript-eslint/naming-convention -- CitizenFX engine surface: names fixed by the runtime */
 declare function onNet<T extends (...Args: never[]) => void>(EventName: string, Callback: T): void;
 declare function emitNet(EventName: string, ...Args: unknown[]): void;
+/* eslint-enable @typescript-eslint/naming-convention */
 
 /**
  * Settings bridge on the Frontend.

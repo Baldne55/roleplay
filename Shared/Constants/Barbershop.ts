@@ -16,12 +16,25 @@
 
 import type { Gender } from './Character.js';
 
+/**
+ * One selectable hairstyle: the engine's drawable index plus the label
+ * shown in the creator.
+ *
+ * The ID is the engine's, not an ordinal - the lists are curated, so
+ * entries are neither contiguous nor in index order. Always match on
+ * `ID`, never on array position.
+ */
 export interface HairEntry {
   /** GTA V drawable variation index. */
   ID: number;
   Name: string;
 }
 
+/**
+ * Male hairstyles, curated from the GTA V freemode male drawables.
+ * Non-contiguous by design (see the file header) - index into this list,
+ * then read `.ID` for the native drawable.
+ */
 export const MaleHairList: readonly HairEntry[] = [
   { ID: 0, Name: 'None' },
   { ID: 1, Name: 'Buzzcut' },
@@ -63,6 +76,11 @@ export const MaleHairList: readonly HairEntry[] = [
   { ID: 73, Name: 'Military Buzzcut' },
 ];
 
+/**
+ * Female hairstyles. Same curation and the same non-contiguous ID caveat
+ * as MaleHairList; the two lists are independent and their indices do not
+ * correspond to each other.
+ */
 export const FemaleHairList: readonly HairEntry[] = [
   { ID: 0, Name: 'None' },
   { ID: 1, Name: 'Short' },
@@ -106,16 +124,29 @@ export const FemaleHairList: readonly HairEntry[] = [
   { ID: 77, Name: 'Short Bob' },
 ];
 
+/** The hairstyle list for a gender - the two ped models share no indices. */
 export function HairListByGender(Gender: Gender): readonly HairEntry[] {
   return Gender === 'Female' ? FemaleHairList : MaleHairList;
 }
 
+/**
+ * Look up a hairstyle's display name, or null when the index is not in
+ * the curated list.
+ *
+ * Takes a boolean rather than a Gender because callers here usually have
+ * an already-resolved model flag rather than the character's gender
+ * string.
+ */
 export function FindHairName(ID: number, IsFemale: boolean): string | null {
   const List = IsFemale ? FemaleHairList : MaleHairList;
   const Entry = List.find((H) => H.ID === ID);
   return Entry !== undefined ? Entry.Name : null;
 }
 
+/**
+ * Labels for the male hair-decal slider, in slider order. Index 0 is
+ * "None", so a clean scalp stays reachable.
+ */
 export const MaleHairDecalNames: readonly string[] = [
   'Close Shave', 'Buzzcut', 'Faux Hawk', 'Hipster', 'Side Parting', 'Shorter Cut', 'Biker',
   'Ponytail', 'Cornrows', 'Slicked', 'Short Brushed', 'Spikey', 'Caesar', 'Chopped', 'Dreads',
@@ -126,6 +157,10 @@ export const MaleHairDecalNames: readonly string[] = [
   'Layered Mod', 'Flattop', 'Military Buzzcut',
 ];
 
+/**
+ * Labels for the female hair-decal slider, in slider order. Index 0 is
+ * "None".
+ */
 export const FemaleHairDecalNames: readonly string[] = [
   'Close Shave', 'Short', 'Layered Bob', 'Pigtails', 'Ponytail', 'Braided Mohawk', 'Braids',
   'Bob', 'Faux Hawk', 'French Twist', 'Long Bob', 'Loose Tied', 'Pixie', 'Shaved Bangs',
@@ -136,6 +171,7 @@ export const FemaleHairDecalNames: readonly string[] = [
   'Bandana and Braid', 'Layered Mod', 'Skinbyrd', 'Neat Bun', 'Short Bob',
 ];
 
+/** Hair-decal (colour overlay) names for a gender, indexed by decal id. */
 export function HairDecalNamesByGender(Gender: Gender): readonly string[] {
   return Gender === 'Female' ? FemaleHairDecalNames : MaleHairDecalNames;
 }
@@ -159,6 +195,16 @@ export interface HairDecalEntry {
   Overlay: string;
 }
 
+/**
+ * Male hair decals as collection/overlay pairs, parallel to
+ * MaleHairDecalNames - the slider index selects from both, so the two
+ * arrays must stay the same length and in the same order.
+ *
+ * The label is stored twice (here as `.Name`, and again in
+ * MaleHairDecalNames) and the two agree entry-for-entry today. Nothing
+ * enforces that, so an insertion into one list without the other
+ * silently mislabels every decal after the insertion point.
+ */
 export const MaleHairDecals: readonly HairDecalEntry[] = [
   { Name: 'Close Shave', Collection: 'mpbeach_overlays', Overlay: 'FM_Hair_Fuzz' },
   { Name: 'Buzzcut', Collection: 'multiplayer_overlays', Overlay: 'NG_M_Hair_001' },
@@ -200,6 +246,11 @@ export const MaleHairDecals: readonly HairDecalEntry[] = [
   { Name: 'Military Buzzcut', Collection: 'mpgunrunning_overlays', Overlay: 'MP_Gunrunning_Hair_M_001_M' },
 ];
 
+/**
+ * Female hair decals, parallel to FemaleHairDecalNames. Same
+ * index-alignment requirement, and the same unenforced duplicate-label
+ * hazard, as the male pair above.
+ */
 export const FemaleHairDecals: readonly HairDecalEntry[] = [
   { Name: 'Close Shave', Collection: 'mpbeach_overlays', Overlay: 'FM_Hair_Fuzz' },
   { Name: 'Short', Collection: 'multiplayer_overlays', Overlay: 'NG_F_Hair_001' },
@@ -243,10 +294,18 @@ export const FemaleHairDecals: readonly HairDecalEntry[] = [
   { Name: 'Short Bob', Collection: 'mpgunrunning_overlays', Overlay: 'MP_Gunrunning_Hair_F_001_F' },
 ];
 
+/**
+ * Hair-decal entries for a gender, carrying the collection/overlay pair
+ * the client hashes and applies to the ped.
+ */
 export function HairDecalsByGender(Gender: Gender): readonly HairDecalEntry[] {
   return Gender === 'Female' ? FemaleHairDecals : MaleHairDecals;
 }
 
+/**
+ * Beard style labels. Appended onto OverlayValueLabels.FacialHair so the
+ * creator and the barber render the same names for the same indices.
+ */
 export const FacialHairValues: readonly string[] = [
   'None', 'Light Stubble', 'Balbo', 'Circle Beard', 'Goatee', 'Chin', 'Chin Fuzz',
   'Pencil Chin Strap', 'Scruffy', 'Musketeer', 'Mustache', 'Trimmed Beard', 'Stubble',
@@ -256,6 +315,9 @@ export const FacialHairValues: readonly string[] = [
   'The Hampstead', 'The Ambrose', 'Lincoln Curtain',
 ];
 
+/**
+ * Eyebrow style labels. Appended onto OverlayValueLabels.Eyebrows.
+ */
 export const EyebrowValues: readonly string[] = [
   'None', 'Balanced', 'Fashion', 'Cleopatra', 'Quizzical', 'Femme', 'Seductive', 'Pinched',
   'Chola', 'Triomphe', 'Carefree', 'Curvaceous', 'Rodent', 'Double Tram', 'Thin', 'Penciled',
@@ -264,6 +326,9 @@ export const EyebrowValues: readonly string[] = [
   'Winged', 'Triple Tram', 'Arched Tram', 'Cutouts', 'Fade Away', 'Solo Tram',
 ];
 
+/**
+ * Chest hair labels. Appended onto OverlayValueLabels.ChestHair.
+ */
 export const ChestHairValues: readonly string[] = [
   'None', 'Natural', 'The Strip', 'The Tree', 'Hairy', 'Grisly', 'Ape', 'Groomed Ape',
   'Bikini', 'Lightning Bolt', 'Reverse Lightning', 'Love Heart', 'Chestache', 'Happy Face',

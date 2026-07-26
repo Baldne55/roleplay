@@ -6,15 +6,17 @@ import {
 import { NametagBagKeys } from '@Shared/Constants/Nametag.js';
 import { NetEvents, type NetEventPayloads } from '@Shared/Events/NetEvents.js';
 import type { CommandResult } from '@/Services/CommandTypes.js';
-import { CommandRegistry } from '@/Services/CommandRegistry.js';
+import type { CommandRegistry } from '@/Services/CommandRegistry.js';
 import type { ChatService } from '@/Services/ChatService.js';
 import type { AccountSettingsService } from '@/Services/AccountSettingsService.js';
 import { Logger } from '@/Util/Logger.js';
 
+/* eslint-disable @typescript-eslint/naming-convention -- CitizenFX engine surface: names fixed by the runtime */
 declare function Player(Source: number | string): {
   state: { set: (Key: string, Value: unknown, Replicated: boolean) => void };
 };
 declare function emitNet(EventName: string, Target: number, ...Args: unknown[]): void;
+/* eslint-enable @typescript-eslint/naming-convention */
 
 /**
  * Chat / nametag UI utility commands. Every entry that mutates a
@@ -39,6 +41,13 @@ declare function emitNet(EventName: string, Target: number, ...Args: unknown[]):
  */
 const Log = Logger.New('ChatUtility');
 
+/**
+ * Wire the chat preference commands described in the header above.
+ *
+ * Each setter writes three places: the account settings JSON (durable),
+ * a replicated state bag (for cross-resource consumers), and a
+ * ChatSettingChanged event (so an open overlay re-renders at once).
+ */
 export function Register(
   Registry: CommandRegistry,
   Chat: ChatService,
@@ -167,6 +176,14 @@ export function Register(
   });
 }
 
+/**
+ * Notify the client that one chat setting changed.
+ *
+ * Sent alongside the state-bag write, not instead of it: the bag is the
+ * durable value the UI reads on (re)load, while this event is the nudge
+ * that lets an already-open overlay re-render immediately rather than
+ * waiting to notice the bag change.
+ */
 function EmitSettingChanged(Source: number, Key: string, Value: boolean | number): void {
   const Payload: NetEventPayloads[typeof NetEvents.ChatSettingChanged] = { Key, Value };
   emitNet(NetEvents.ChatSettingChanged, Source, Payload);
@@ -187,6 +204,13 @@ function ResolveBool(
   return DefaultAccountSettings[Key];
 }
 
+/**
+ * The AccountSettings keys /toggle is allowed to flip. Deliberately a
+ * closed union rather than `keyof AccountSettings`: it keeps the numeric
+ * settings (ChatFontSize, ChatPageSize) unreachable from a boolean flip,
+ * so a new entry in ToggleEntries pointing at a non-boolean field fails
+ * to compile instead of writing `!42` into the JSON column.
+ */
 type ToggleSettingKey =
   | 'ChatTimestamp'
   | 'ChatVisible'
@@ -196,10 +220,14 @@ type ToggleSettingKey =
   | 'NametagIDVisible';
 
 /**
- * Sub-command table for /toggle. Canonical names and aliases both index
- * into the same entry so the runtime lookup is a single bracket access.
- * Every entry now carries a real SettingKey - the nametag pair got
- * persistent backing when the overlay shipped.
+ * One /toggle sub-command. Carries the three write targets a flip needs:
+ * SettingKey (durable JSON column), BagKey (replicated state bag other
+ * resources read), and Canonical (the name echoed to the SPA in the
+ * ChatSettingChanged event). Ack is the confirmation line.
+ *
+ * Every entry has a real SettingKey - the nametag pair got persistent
+ * backing when the overlay shipped, so there is no longer a
+ * bag-only/ephemeral variant to account for.
  */
 interface ToggleEntry {
   Canonical: string;
@@ -208,6 +236,10 @@ interface ToggleEntry {
   SettingKey: ToggleSettingKey;
 }
 
+/**
+ * The registered toggles, in the order /toggle lists them when the
+ * player supplies no argument or an unknown one.
+ */
 const ToggleEntries: readonly ToggleEntry[] = [
   {
     Canonical: 'timestamp',
@@ -247,12 +279,27 @@ const ToggleEntries: readonly ToggleEntry[] = [
   },
 ];
 
+/**
+ * Shorthand players type instead of the canonical name. Alias -> canonical;
+ * resolved into ToggleLookup below so both spellings hit the same entry.
+ * Aliases are intentionally absent from the "Available:" hint - listing
+ * them doubles the line length for no added discoverability.
+ */
 const ToggleAliases: Record<string, string> = {
   counter: 'charactercounter',
   selftag: 'selfnametag',
   tagid: 'nametagid',
 };
 
+/**
+ * Flattened canonical-and-alias index, built once at module load so the
+ * runtime lookup in /toggle is a single bracket access rather than a
+ * scan plus an alias fallback.
+ *
+ * An alias pointing at a canonical name that does not exist is dropped
+ * silently - the `undefined` guard means a typo in ToggleAliases costs
+ * that one alias, not a crash at import time.
+ */
 const ToggleLookup: Record<string, ToggleEntry> = (() => {
   const Map: Record<string, ToggleEntry> = {};
   for (const Entry of ToggleEntries) {
@@ -265,4 +312,5 @@ const ToggleLookup: Record<string, ToggleEntry> = (() => {
   return Map;
 })();
 
+/** Canonical names only, for the usage / unknown-toggle hint lines. */
 const CanonicalToggleNames: readonly string[] = ToggleEntries.map((Entry) => Entry.Canonical);

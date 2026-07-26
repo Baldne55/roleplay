@@ -16,6 +16,12 @@ import type { CharacterSummary } from '../Constants/Character.js';
 import type { AccountSettings } from '../Constants/AccountSettings.js';
 import type { CommandHint } from '../Chat/Index.js';
 
+/**
+ * Every Frontend -> UI message name. Const object rather than an enum so
+ * the NUIEventName union and the NUIEventPayloads keys both derive from
+ * it - adding a name here without a matching payload entry fails to
+ * compile at the send site, which is the intended safety net.
+ */
 export const NUIEvents = {
   /**
    * Frontend -> UI. Tells the SPA to show the auth card (routes to /Auth).
@@ -154,8 +160,18 @@ export const NUIEvents = {
   ChatSettingChanged: 'Roleplay:NUI:Chat:SettingChanged',
 } as const;
 
+/** Any client<->NUI event name, derived from the constants object. */
 export type NUIEventName = (typeof NUIEvents)[keyof typeof NUIEvents];
 
+/**
+ * Payload shape for every NUI message, keyed by event name.
+ *
+ * Each payload restates its own `Type` field because the NUI transport
+ * delivers a single message stream to one browser listener - the
+ * discriminator is what lets NuiInbox narrow the union and route it.
+ * Adding an event means adding both the name constant and its entry
+ * here, or the send site will not compile.
+ */
 export interface NUIEventPayloads {
   [NUIEvents.AuthShow]: {
     Type: typeof NUIEvents.AuthShow;

@@ -1,12 +1,34 @@
+<!--
+  Command autocomplete dropdown, shown above the input bar while the
+  player is typing a `/command`.
+
+  Renders `Chat.Suggestions`, which the store recomputes as the draft
+  changes by filtering the command list the server pushed at spawn
+  (ChatCommandList -> Chat.SetCommands). The list is therefore already
+  permission-filtered server-side: a player never sees a suggestion for a
+  command their staff level cannot run, because the server never sent it.
+
+  Selection state lives in the parent, not here. InputBar owns the
+  highlight index because it owns the arrow-key handling, and passes it
+  down as `HighlightIndex`; this component is pure presentation and emits
+  nothing. Both sides guard against an empty list - the box unmounts via
+  `Visible` when nothing matches, so the parent's index is only ever read
+  while at least one row exists.
+-->
 <script setup lang="ts">
-import { useChatStore } from '@/Stores/Chat';
+import { UseChatStore } from '@/Stores/Chat';
 import { computed } from 'vue';
 
 defineProps<{
   HighlightIndex: number;
 }>();
 
-const Chat = useChatStore();
+const Chat = UseChatStore();
+/**
+ * Unmount the box entirely when nothing matches - which is also what
+ * keeps the parent's highlight index safe to read, since it is only
+ * dereferenced while at least one row exists.
+ */
 const Visible = computed<boolean>(() => Chat.Suggestions.length > 0);
 </script>
 
@@ -20,7 +42,7 @@ const Visible = computed<boolean>(() => Chat.Suggestions.length > 0);
     >
       <span class="Chat-Suggestion-Name">/{{ Hint.Name }}</span>
       <span v-if="Hint.Params.length > 0" class="Chat-Suggestion-Params"
-        >&nbsp;{{ Hint.Params }}</span
+      >&nbsp;{{ Hint.Params }}</span
       >
       <span v-if="Hint.Description.length > 0" class="Chat-Suggestion-Desc">
         — {{ Hint.Description }}

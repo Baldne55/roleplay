@@ -1,3 +1,45 @@
+<!--
+  Character creation, step 2 of 2: appearance. The largest view in the
+  SPA, and the only one driving a live in-game ped rather than just its
+  own DOM.
+
+  PREVIEW COUPLING
+  Every edit round-trips through PreviewClient to the Frontend, which
+  restyles a real ped standing in the creator scene. There is no
+  client-side render of the character here - the "preview" is the game
+  itself, and this view is a control panel over it. Three separate apply
+  paths exist because they hit different natives and cost different
+  amounts: ApplyAppearance (face/hair/overlays), ApplyOutfit (clothing
+  components) and ApplyCamera (framing). Slider handlers pick exactly one
+  rather than reapplying everything, which is what keeps dragging smooth.
+
+  DATA-DRIVEN PAGES
+  The wizard's pages and sliders come from Shared/Constants/Character, not
+  from this template - the markup renders whatever `Char.Pages` describes.
+  Adding an appearance control means adding a SliderDef there, not editing
+  this file.
+
+  OUTFIT SLIDERS ARE THE EXCEPTION
+  Clothing sliders cannot use their static Max, because the valid drawable
+  and texture ranges depend on the ped model the game actually loaded. The
+  Frontend pushes real bounds back after the model resolves, and `LiveMax`
+  reads those - including the dependent case where a texture's ceiling
+  depends on which drawable is currently selected. `OutfitSliderIndex`
+  exists so that per-frame lookup stays O(1) instead of re-parsing the
+  slider id.
+
+  TEARDOWN
+  `StopPreview` teleports the ped back into the auth skybox, so it must
+  fire when the player abandons the wizard and must NOT fire once a submit
+  is in flight - after that the spawn pipeline owns the ped, and tearing
+  the shell down underneath it would fight the spawn. The unmount hook
+  therefore checks `Char.Status` rather than stopping unconditionally, and
+  the explicit Back/Cancel paths stop it themselves.
+
+  The final POST here sends both halves of the wizard - the identity
+  fields collected by DetailsView and the appearance built here - because
+  nothing was submitted at step 1.
+-->
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, useTemplateRef } from 'vue';
 import { useRouter } from 'vue-router';
@@ -23,20 +65,29 @@ import {
   type SliderDef,
 } from '@Shared/Constants/Character';
 import { ClothingCategories } from '@Shared/Constants/Outfit';
-import { useCharacterStore } from '@/Stores/Character';
-import { useCharacterListStore } from '@/Stores/CharacterList';
+import { UseCharacterStore } from '@/Stores/Character';
+import { UseCharacterListStore } from '@/Stores/CharacterList';
 import { Preview } from '@/Services/PreviewClient';
 
-/**
- * Slider Id -> outfit category metadata. Lets the wizard detect "this is
- * an outfit slider" in O(1) and resolve whether it drives the Drawable
- * or the Texture axis without re-parsing the slider Id string.
- */
+/** Which axis of a clothing category a slider drives. */
 type OutfitSliderKind = 'Drawable' | 'Texture';
+
+/** What an outfit slider resolves to: its category, and which axis it moves. */
 interface OutfitSliderMeta {
   CategoryId: string;
   Kind: OutfitSliderKind;
 }
+
+/**
+ * Slider Id -> outfit category metadata. Lets the wizard detect "this is
+ * an outfit slider" in O(1) and resolve whether it drives the Drawable or
+ * the Texture axis without re-parsing the slider Id string on every
+ * change event.
+ *
+ * Built once at module load from ClothingCategories, so a category added
+ * there is picked up here with no edit - the `<Id>_Drawable` /
+ * `<Id>_Texture` naming is the contract that makes that work.
+ */
 const OutfitSliderIndex: Record<string, OutfitSliderMeta> = (() => {
   const Index: Record<string, OutfitSliderMeta> = {};
   for (const Category of ClothingCategories) {
@@ -46,15 +97,25 @@ const OutfitSliderIndex: Record<string, OutfitSliderMeta> = (() => {
   return Index;
 })();
 
-const Char = useCharacterStore();
-const List = useCharacterListStore();
+const Char = UseCharacterStore();
+const List = UseCharacterListStore();
 const Router = useRouter();
 
 // Cancel is only meaningful when the account already owns at least one
 // character. Zero-character accounts have no Selector to return to and
 // must complete creation, so the link stays hidden.
+/**
+ * Cancel is only offered when the account already owns a character -
+ * a zero-character account has no selector to return to and must
+ * complete creation.
+ */
 const CanCancel = computed<boolean>(() => List.HasCharacters);
 
+/**
+ * Abandon the wizard: tear the preview down, wipe the draft, and return
+ * to the selector. The reset is explicit because the draft lives in a
+ * store that would otherwise survive into the next attempt.
+ */
 function Cancel(): void {
   // Mirror the first-page Back teardown: tear down the preview shell
   // explicitly (the ped is teleported back into the auth skybox), then
@@ -68,17 +129,28 @@ function Cancel(): void {
 
 const RootEl = useTemplateRef<HTMLElement>('RootEl');
 const OpacityPopover = useTemplateRef<InstanceType<typeof Popover>>('OpacityPopover');
+/** Which overlay the opacity popover is currently editing, if open. */
 const PopoverOverlay = ref<OverlayName | null>(null);
 
+/** The page currently being edited; may be undefined mid-transition. */
 const CurrentPage = computed(() => Char.Pages[Char.CurrentPageIndex]);
+/** First page shows Randomize in place of Back. */
 const IsFirstPage = computed(() => Char.CurrentPageIndex === 0);
+/** Final page turns Next into Finish, which opens the confirm dialog. */
 const IsFinalPage = computed(() => Char.CurrentPageIndex === Char.Pages.length - 1);
+/** Whether the "finish creation" confirmation dialog is open. */
 const ShowFinishConfirm = ref(false);
 
+/**
+ * Mark a slider as focused, so arrow keys nudge it. Set on interaction
+ * rather than on DOM focus, since the player is usually looking at the
+ * ped rather than the control.
+ */
 function SetActiveSlider(Id: string): void {
   Char.ActiveSliderId = Id;
 }
 
+/** Current value of a slider, defaulting to 0 when it has never been set. */
 function ValueOf(Id: string): number {
   return Char.SliderValues[Id] ?? 0;
 }
@@ -105,10 +177,19 @@ function LiveMax(Def: SliderDef): number {
   return typeof TextureMax === 'number' ? TextureMax : 0;
 }
 
+/** Whether this slider drives clothing, and therefore needs live bounds. */
 function IsOutfitSlider(Def: SliderDef): boolean {
   return OutfitSliderIndex[Def.Id] !== undefined;
 }
 
+/**
+ * The label shown beside a slider.
+ *
+ * Three cases in priority order: outfit sliders read `N / Max` against
+ * their live bounds, sliders with ValueLabels show the name rather than
+ * the index, and everything else shows the number - to two decimals when
+ * the step is fractional.
+ */
 function DisplayValue(Def: SliderDef): string {
   const Value = ValueOf(Def.Id);
   if (IsOutfitSlider(Def)) {
@@ -126,6 +207,11 @@ function DisplayValue(Def: SliderDef): string {
   return String(Math.round(Value));
 }
 
+/**
+ * Push a slider change to the game, choosing the cheapest apply path that
+ * covers it - outfit edits reapply clothing, everything else reapplies
+ * appearance. Reapplying both on every drag frame is what this avoids.
+ */
 function ApplyLivePreview(Def: SliderDef): void {
   if (IsOutfitSlider(Def)) {
     void Preview.ApplyOutfit(Char.Outfit);
@@ -134,12 +220,23 @@ function ApplyLivePreview(Def: SliderDef): void {
   void Preview.ApplyAppearance(Char.Appearance);
 }
 
+/**
+ * Commit a slider value from the UI and refresh the preview. PrimeVue can
+ * hand back either a number or a range array, so the value is normalised
+ * before storing.
+ */
 function SetSlider(Id: string, Raw: number | number[], Def: SliderDef): void {
   const Value = Array.isArray(Raw) ? (Raw[0] ?? 0) : Raw;
   Char.SetSlider(Id, Value);
   ApplyLivePreview(Def);
 }
 
+/**
+ * Nudge a slider one step, clamped to its live bounds - `LiveMax` rather
+ * than the static max, so clothing sliders stop at what the loaded model
+ * actually offers. The `toFixed(6)` guards against float drift
+ * accumulating over many keypresses on fractional steps.
+ */
 function AdjustSlider(Def: SliderDef, Direction: -1 | 1): void {
   const Current = ValueOf(Def.Id);
   const Max = LiveMax(Def);
@@ -148,12 +245,17 @@ function AdjustSlider(Def: SliderDef, Direction: -1 | 1): void {
   ApplyLivePreview(Def);
 }
 
+/** Commit a camera value and reframe. Never touches the ped, so it stays cheap. */
 function SetCameraSlider(Id: string, Raw: number | number[]): void {
   const Value = Array.isArray(Raw) ? (Raw[0] ?? 0) : Raw;
   Char.SetSlider(Id, Value);
   void Preview.ApplyCamera(Char.Camera);
 }
 
+/**
+ * Nudge a camera slider one step. Clamps to the static max, unlike
+ * AdjustSlider - camera bounds are fixed and do not depend on the model.
+ */
 function AdjustCameraSlider(Def: SliderDef, Direction: -1 | 1): void {
   const Current = ValueOf(Def.Id);
   const Next = Math.min(Def.Max, Math.max(Def.Min, Current + Def.Step * Direction));
@@ -161,12 +263,23 @@ function AdjustCameraSlider(Def: SliderDef, Direction: -1 | 1): void {
   void Preview.ApplyCamera(Char.Camera);
 }
 
+/**
+ * Open the opacity popover for an overlay slider that supports one.
+ *
+ * Overlays (blemishes, makeup, ageing) carry both a variant and a
+ * strength; the popover keeps the second control out of the main list
+ * rather than doubling its length.
+ */
 function OpenOpacityPopover(Event: MouseEvent, Def: SliderDef): void {
   if (Def.HasOpacity !== true) return;
   PopoverOverlay.value = Def.Id as OverlayName;
   OpacityPopover.value?.show(Event);
 }
 
+/**
+ * Commit the popover's opacity onto the `<OverlayName>Opacity` slider -
+ * the paired key the appearance layer reads alongside the overlay itself.
+ */
 function SetOpacity(Raw: number | number[]): void {
   if (PopoverOverlay.value === null) return;
   const Value = Array.isArray(Raw) ? (Raw[0] ?? 0) : Raw;
@@ -174,6 +287,15 @@ function SetOpacity(Raw: number | number[]): void {
   void Preview.ApplyAppearance(Char.Appearance);
 }
 
+/**
+ * Reroll the character's appearance.
+ *
+ * Camera framing and clothing are explicitly carried over, for different
+ * reasons: the player's viewing angle is not part of the character, and
+ * outfit sliders have no random range, so letting the reroll write their
+ * defaults would silently strip the wardrobe. Randomize is meant to
+ * reroll a face, not undress anyone.
+ */
 function Randomize(): void {
   const Next = RandomSliderValues(Char.Gender);
   // Preserve camera framing - the player's current viewing angle should
@@ -197,6 +319,11 @@ function Randomize(): void {
   void Preview.ApplyAppearance(Char.Appearance);
 }
 
+/**
+ * Back: previous page, or out of the wizard entirely when already on the
+ * first one - in which case the preview is torn down explicitly, since
+ * leaving step 2 means the ped returns to the auth skybox.
+ */
 function OnBack(): void {
   if (IsFirstPage.value) {
     void Preview.StopPreview();
@@ -208,6 +335,11 @@ function OnBack(): void {
   Char.GoBack();
 }
 
+/**
+ * Next: advance a page, or open the confirmation dialog on the final one.
+ * Creation is irreversible and consumes a slot, so it takes a deliberate
+ * second click rather than firing straight off Next.
+ */
 function OnNext(): void {
   if (IsFinalPage.value) {
     ShowFinishConfirm.value = true;
@@ -216,6 +348,16 @@ function OnNext(): void {
   Char.GoNext();
 }
 
+/**
+ * Submit the finished character. Sends the identity fields from step 1
+ * alongside the appearance built here - this is the wizard's only write
+ * to the server.
+ *
+ * The `Submitting` guard and `BeginSubmit()` together make this
+ * single-flight: creation is not idempotent, so a second POST would
+ * consume another character slot. Only the transport failure is caught
+ * here; a server-side rejection comes back as its own NUI message.
+ */
 function ConfirmFinish(): void {
   if (Char.Status === 'Submitting') return;
   ShowFinishConfirm.value = false;
@@ -239,6 +381,13 @@ function ConfirmFinish(): void {
   });
 }
 
+/**
+ * Resolve a slider id to its definition, searching the current page then
+ * the camera set. Scoped to the current page on purpose - arrow keys
+ * should only ever move a control the player can see.
+ *
+ * Linear scan over a handful of entries per page; not worth indexing.
+ */
 function FindSliderDef(Id: string): SliderDef | null {
   for (const Def of CurrentPage.value?.Sliders ?? []) {
     if (Def.Id === Id) return Def;
@@ -249,12 +398,26 @@ function FindSliderDef(Id: string): SliderDef | null {
   return null;
 }
 
+/**
+ * True when focus sits in a text-entry control, in which case arrow keys
+ * belong to that control's caret and must not be stolen for slider
+ * nudging.
+ */
 function IsTypingTarget(Target: EventTarget | null): boolean {
   if (!(Target instanceof HTMLElement)) return false;
   const Tag = Target.tagName;
   return Tag === 'INPUT' || Tag === 'TEXTAREA' || Target.isContentEditable;
 }
 
+/**
+ * Left/Right nudge the focused slider by one step. Bound on `document`
+ * rather than on the sliders themselves so the keys work while focus sits
+ * anywhere in the panel - the player is usually looking at the ped, not
+ * at the control they are adjusting.
+ *
+ * Camera and appearance sliders take different apply paths, so the
+ * handler dispatches on which set the definition came from.
+ */
 function HandleKeydown(Event: KeyboardEvent): void {
   if (IsTypingTarget(Event.target)) return;
   if (Char.ActiveSliderId === null) return;

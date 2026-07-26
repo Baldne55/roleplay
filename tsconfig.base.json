@@ -1,5 +1,15 @@
+// Shared compiler settings for every workspace. Each workspace's own
+// tsconfig extends this and adds only what differs: its `lib` (the client
+// needs DOM, the server does not), its `types` (@citizenfx/client vs
+// @citizenfx/server), and its path aliases.
+//
+// Comments are legal here - tsc parses tsconfig as JSONC. Do not feed this
+// file to a strict JSON.parse.
 {
   "compilerOptions": {
+    // Both bundles are fed to esbuild, never emitted by tsc (every
+    // workspace sets noEmit), so `module`/`moduleResolution` only have to
+    // satisfy the type-checker and match how esbuild resolves.
     "target": "ES2022",
     "module": "ESNext",
     "moduleResolution": "Bundler",
@@ -15,14 +25,30 @@
     "alwaysStrict": true,
     "useUnknownInCatchVariables": true,
 
+    // `noUncheckedIndexedAccess` is why `Args[0]` is `string | undefined`
+    // throughout the command layer and every handler checks for undefined
+    // before use - that is deliberate, not defensive noise.
     "noUncheckedIndexedAccess": true,
     "noImplicitOverride": true,
+    // Guards the switch-heavy dispatchers (command outcomes, NUI inbox).
     "noFallthroughCasesInSwitch": true,
     "noImplicitReturns": true,
+    // `exactOptionalPropertyTypes` keeps "absent" and "present but
+    // undefined" distinct, which matters for the settings JSON column:
+    // an unset key must stay unset rather than persisting an explicit
+    // undefined over a stored value.
     "exactOptionalPropertyTypes": true,
     "noPropertyAccessFromIndexSignature": false,
 
+    // Required by sequelize-typescript's model decorators (@Table,
+    // @Column, ...).
     "experimentalDecorators": true,
+    // Vestigial in practice: emitDecoratorMetadata only pays off when
+    // something reads the reflected types at runtime, and nothing here
+    // does - all 184 @Column decorators declare an explicit
+    // `type: DataType.*`, so sequelize-typescript never has to infer one.
+    // reflect-metadata (its peer dep) is installed transitively but is
+    // deliberately not imported; see Backend/esbuild.config.mjs for why.
     "emitDecoratorMetadata": true,
 
     "esModuleInterop": true,
@@ -31,11 +57,20 @@
     "isolatedModules": true,
     "verbatimModuleSyntax": false,
 
+    // `skipLibCheck` is load-bearing, not laziness: the @citizenfx type
+    // packages and sequelize-typescript's bundled .d.ts files do not
+    // type-check cleanly against these strict settings. Turning it off
+    // floods the build with errors in code we do not own.
     "skipLibCheck": true,
     "forceConsistentCasingInFileNames": true,
 
     "sourceMap": true,
+    // No .d.ts output - nothing consumes these workspaces as libraries;
+    // Shared is pulled in by path alias and bundled from source.
     "declaration": false,
+    // Comments survive into the bundles. Kept because the built output is
+    // what gets read when debugging a live server, and the sourcemap is
+    // not always to hand.
     "removeComments": false,
 
     "paths": {

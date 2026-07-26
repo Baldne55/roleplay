@@ -1,6 +1,6 @@
 import { defineStore } from 'pinia';
 import { computed, ref } from 'vue';
-import { Parse, type ChatSegment, type CommandHint } from '@Shared/Chat/Index';
+import { ChatBodyMaxLength, Parse, type ChatSegment, type CommandHint } from '@Shared/Chat/Index';
 
 /**
  * Chat scrollback + input state.
@@ -26,13 +26,39 @@ export interface ChatMessage {
   ReceivedAt: number;
 }
 
+/**
+ * Scrollback ceiling. Oldest lines are dropped past this - the SPA runs
+ * inside CEF alongside the game, so an unbounded array is a memory leak
+ * measured against the player's frame budget, not a desktop browser's.
+ */
 const MessageCap = 100;
+/** Up-arrow input history depth. Independent of MessageCap despite the same value. */
 const HistoryCap = 100;
-const InputMaxLength = 240;
+/**
+ * Re-exported from Shared so the input's cap and the Backend's arrival
+ * check are one number. They used to be independent 240s in two
+ * workspaces.
+ */
+const InputMaxLength = ChatBodyMaxLength;
+/**
+ * Fallbacks matching the /fontsize and /pagesize command defaults. Used
+ * only until the server's settings hydrate arrives; they must stay in
+ * step with DefaultAccountSettings or the overlay visibly re-flows a
+ * moment after connecting.
+ */
 const FontSizeDefault = 0.65;
 const PageSizeDefault = 20;
 
-export const useChatStore = defineStore('Chat', () => {
+/**
+ * Chat overlay state: scrollback, input buffer, command hints, and the
+ * display preferences the server pushes down.
+ *
+ * The store holds already-parsed Segments rather than raw token strings,
+ * so colour parsing happens once on arrival instead of on every re-render
+ * - and, more importantly, so no component is ever handed a string it
+ * might be tempted to render as HTML.
+ */
+export const UseChatStore = defineStore('Chat', () => {
   const Messages = ref<ChatMessage[]>([]);
   const Commands = ref<CommandHint[]>([]);
   const InputActive = ref<boolean>(false);
@@ -57,9 +83,10 @@ export const useChatStore = defineStore('Chat', () => {
 
   /**
    * Monotonic scroll-request counter. InputBar bumps it on PageUp /
-   * PageDown; MessageList watches and scrolls by `±PageSize` rows. A
-   * counter rather than a boolean so back-to-back PageUp presses all
-   * register even when the direction does not change.
+   * PageDown; MessageList watches and scrolls by one visible window
+   * (its own clientHeight, which PageSize sizes via CSS). A counter
+   * rather than a boolean so back-to-back PageUp presses all register
+   * even when the direction does not change.
    */
   const ScrollDirection = ref<-1 | 1>(-1);
   const ScrollCounter = ref<number>(0);
@@ -80,17 +107,15 @@ export const useChatStore = defineStore('Chat', () => {
     for (const Hint of Commands.value) {
       if (Hint.Name.toLowerCase().startsWith(Needle)) {
         Matches.push(Hint);
-        continue;
+      } else if (Hint.Aliases.some((Alias) => Alias.toLowerCase().startsWith(Needle))) {
+        Matches.push(Hint);
       }
-      for (const Alias of Hint.Aliases) {
-        if (Alias.toLowerCase().startsWith(Needle)) {
-          Matches.push(Hint);
-          break;
-        }
-      }
+      // Checked after BOTH match paths - a `continue` on the name branch
+      // used to skip this, so a name-matched query walked the whole
+      // command list on every keystroke instead of stopping at the cap.
       if (Matches.length >= 8) break;
     }
-    return Matches.slice(0, 8);
+    return Matches;
   });
 
   function Push(Body: string): void {

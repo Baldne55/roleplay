@@ -11,6 +11,16 @@ export type PlayerPhase =
   | 'Authenticated' // account resolved, character-select shown
   | 'Spawned'; // character placed in the world
 
+/**
+ * Everything the server knows about a connection independent of which
+ * character is loaded. Lives for the connection, not the character: a
+ * /changecharacter clears CharacterID and drops Phase back to
+ * Authenticated but keeps the same PlayerState object and AccountID.
+ *
+ * Mutated in place by the controllers rather than replaced, so a
+ * reference held across an await still sees current values - which also
+ * means a caller must never cache a FIELD off it across an await.
+ */
 export interface PlayerState {
   Source: number;
   Phase: PlayerPhase;
@@ -43,6 +53,11 @@ export class PlayerStateService {
   private readonly Log = Logger.New('PlayerState');
   private readonly States = new Map<number, PlayerState>();
 
+  /**
+   * Create the tracking entry for a connecting player, in the PreAuth
+   * phase with their assigned routing bucket. Every later lookup depends
+   * on this having run.
+   */
   Initialise(Source: number, Bucket: number): PlayerState {
     const State: PlayerState = {
       Source,
@@ -58,6 +73,11 @@ export class PlayerStateService {
     return State;
   }
 
+  /**
+   * State for a Source, or null if untracked (never connected, or already
+   * cleared). Callers generally check `Phase === 'Spawned'` too - being
+   * tracked is not the same as being in the world.
+   */
   Get(Source: number): PlayerState | null {
     return this.States.get(Source) ?? null;
   }
@@ -87,6 +107,10 @@ export class PlayerStateService {
     return Out;
   }
 
+  /**
+   * Advance the connection phase (PreAuth -> Authenticated -> Spawned).
+   * The gate most command and broadcast paths test against.
+   */
   SetPhase(Source: number, Phase: PlayerPhase): void {
     const State = this.States.get(Source);
     if (State === undefined) return;
@@ -94,6 +118,7 @@ export class PlayerStateService {
     this.Log.Debug(`Phase -> ${Phase} - source=${Source}`);
   }
 
+  /** Record the resolved account once identity is established. */
   SetAccountID(Source: number, AccountID: string): void {
     const State = this.States.get(Source);
     if (State === undefined) return;
@@ -101,6 +126,7 @@ export class PlayerStateService {
     this.Log.Debug(`AccountID -> ${AccountID} - source=${Source}`);
   }
 
+  /** Record the selected character on spawn. Cleared on a character switch. */
   SetCharacterID(Source: number, CharacterID: string): void {
     const State = this.States.get(Source);
     if (State === undefined) return;
@@ -121,6 +147,11 @@ export class PlayerStateService {
     this.Log.Debug(`CharacterID cleared - source=${Source}`);
   }
 
+  /**
+   * Toggle admin duty. Separate from staff level: level is what a player
+   * *may* do, duty is whether they are currently acting on it, and
+   * staff-gated commands require both.
+   */
   SetAdminDuty(Source: number, On: boolean): void {
     const State = this.States.get(Source);
     if (State === undefined) return;
@@ -128,6 +159,11 @@ export class PlayerStateService {
     this.Log.Debug(`AdminDuty -> ${On} - source=${Source}`);
   }
 
+  /**
+   * Remove tracking on disconnect, returning the final state for the
+   * teardown path to act on. Fetch-and-remove in one call, so a
+   * reconnecting player reusing the Source id cannot see stale state.
+   */
   Clear(Source: number): PlayerState | null {
     const State = this.States.get(Source) ?? null;
     if (State !== null) {

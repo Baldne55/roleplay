@@ -1,6 +1,6 @@
 import { ChatColor, ChatFormatter } from '@Shared/Chat/Index.js';
 import type { CommandResult } from '@/Services/CommandTypes.js';
-import { CommandRegistry } from '@/Services/CommandRegistry.js';
+import type { CommandRegistry } from '@/Services/CommandRegistry.js';
 import type { PlayerStateService } from '@/Services/PlayerStateService.js';
 import type { ProximityBroadcaster } from '@/Services/ProximityBroadcaster.js';
 

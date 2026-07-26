@@ -71,9 +71,19 @@ export const ChatColor = {
    * Aura preset; the default with no override is #10B981.
    */
   Primary: '#10B981',
+  /** Cyan. Handheld-radio transmissions - tints the whole line so radio
+   * traffic reads as its own channel, distinct from speech (white),
+   * PMs (yellow) and /me (purple). */
+  Radio: '#22D3EE',
+  /** Indigo. Phone traffic (SMS, voicemail, over-the-line call speech) -
+   * tints the whole phone line so it reads as its own channel, distinct
+   * from radio cyan, PM yellow, /me purple and speech white. */
+  Phone: '#818CF8',
   /** Default reset colour. The parser falls back to this between tokens. */
   White: '#FFFFFF',
 } as const;
 
+/** Semantic colour name from the palette. */
 export type ChatColorName = keyof typeof ChatColor;
+/** The `#RRGGBB` literal a palette name resolves to. */
 export type ChatColorHex = (typeof ChatColor)[ChatColorName];

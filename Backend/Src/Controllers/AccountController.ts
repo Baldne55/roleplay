@@ -9,9 +9,15 @@ import type { AccountService } from '@/Services/AccountService.js';
 import type { ChatService } from '@/Services/ChatService.js';
 import type { ServerConfig } from '@/Infrastructure/Config/ServerConfig.js';
 
+/* eslint-disable @typescript-eslint/naming-convention -- CitizenFX engine surface: names fixed by the runtime */
 declare const source: number;
 declare function on<T extends (...Args: never[]) => void>(EventName: string, Callback: T): void;
 declare function emitNet(EventName: string, Target: number, ...Args: unknown[]): void;
+/* eslint-enable @typescript-eslint/naming-convention */
+// Also CitizenFX engine surface, but already PascalCase so they sit
+// outside the naming-convention pragma above. The three Get* natives are
+// the identity source this whole gate rests on: FXServer resolves them
+// during the connection handshake, so a modded client cannot forge them.
 declare function DropPlayer(PlayerSrc: string | number, Reason: string): void;
 declare function GetPlayerIdentifierByType(PlayerSrc: string, Type: string): string | undefined;
 declare function GetPlayerEndpoint(PlayerSrc: string): string;
@@ -33,8 +39,9 @@ declare function GetPlayerName(PlayerSrc: string): string;
  *        AccountID set).
  *     8. Emit AuthInit (skybox config) + AuthPrepared (profile preview).
  *
- *   playerDropped:
- *     Clear PlayerState. Session-table release lives in AuthController.
+ * PlayerState eviction on disconnect lives in the PlayerSessionService
+ * playerDropped dispatcher (State.Clear, deliberately its final step);
+ * the session-table release lives there too via AccountSessionService.
  */
 export class AccountController {
   private readonly Log = Logger.New('Account');
@@ -49,16 +56,26 @@ export class AccountController {
   ) {
     on('playerJoining', (): void => {
       const Src = source;
-      void this.HandleJoin(Src);
+      // Terminal catch on the fire-and-forget boundary. Nothing awaits
+      // this, so a rejection escaping HandleJoin would surface as an
+      // unhandled rejection with no context; log it against the Source
+      // instead.
+      void this.HandleJoin(Src).catch((Err: unknown) => {
+        this.Log.Error(`HandleJoin failed for source=${Src}`, { Err: String(Err) });
+      });
     });
 
-    on('playerDropped', (): void => {
-      this.State.Clear(source);
-    });
-
-    this.Log.Debug('Handlers registered (playerJoining -> gate, playerDropped -> clear)');
+    this.Log.Debug('Handlers registered (playerJoining -> gate)');
   }
 
+  /**
+   * The connection pipeline: resolve identity from FXServer, check the
+   * Discord whitelist, upsert the account, claim the session, place the
+   * player in a private auth bucket, and show the sign-in card.
+   *
+   * Every rejection kicks with a reason rather than leaving the player in
+   * limbo. Runs before any character exists.
+   */
   private async HandleJoin(Src: number): Promise<void> {
     try {
       const License = ExtractLicense(Src);
@@ -151,6 +168,7 @@ export class AccountController {
     }
   }
 
+  /** Drop a player with a visible reason, and log it for the audit trail. */
   private Kick(Src: number, Reason: string): void {
     try {
       DropPlayer(Src, Reason);
@@ -159,6 +177,13 @@ export class AccountController {
     }
   }
 }
+
+/**
+ * Brand fragment used inside the notice body. Built once at module scope
+ * so the colour tokens around `.mp` are consistent everywhere the brand
+ * appears (welcome line + notice body).
+ */
+const Brand = `Legacy!{${ChatColor.Primary}}.mp!{${ChatColor.White}}`;
 
 /**
  * Per-connection notice block. Static at module scope so the strings are
@@ -172,13 +197,6 @@ export class AccountController {
  *   - Age-of-majority expectation + mature-content warning.
  *   - Implicit rules acceptance on continued play.
  */
-/**
- * Brand fragment used inside the notice body. Built once at module scope
- * so the colour tokens around `.mp` are consistent everywhere the brand
- * appears (welcome line + notice body).
- */
-const Brand = `Legacy!{${ChatColor.Primary}}.mp!{${ChatColor.White}}`;
-
 const NoticeLines: readonly string[] = [
   // Block framing in emerald to match the `.mp` accent in the welcome
   // line. The default red is reserved for ERROR / ADMIN context, which
@@ -197,18 +215,48 @@ const NoticeLines: readonly string[] = [
   ChatFormatter.Footer(ChatColor.Primary),
 ];
 
+/*
+ * ── Identity extraction ──────────────────────────────────────────────
+ *
+ * All four read from FXServer rather than from anything the client sent,
+ * which is what makes them trustworthy: the platform resolves these
+ * during the connection handshake and a modded client cannot forge them.
+ *
+ * Each strips the `type:` prefix the natives return, and each yields null
+ * rather than throwing - a player can disconnect mid-handshake, leaving
+ * the natives with nothing to answer with.
+ */
+
+/**
+ * Rockstar license id - the durable per-installation identity and the
+ * account's primary key. Present for every legitimately connected player.
+ */
 function ExtractLicense(Src: number): string | null {
   const Raw = GetPlayerIdentifierByType(String(Src), 'license');
   if (typeof Raw !== 'string' || Raw.length === 0) return null;
   return Raw.startsWith('license:') ? Raw.slice(8) : Raw;
 }
 
+/**
+ * Discord snowflake, when the player has Discord running and linked.
+ *
+ * Legitimately absent - unlike the license, this one is null for anyone
+ * playing without Discord open, so callers must handle that rather than
+ * treating it as a fault.
+ */
 function ExtractDiscordID(Src: number): string | null {
   const Raw = GetPlayerIdentifierByType(String(Src), 'discord');
   if (typeof Raw !== 'string' || Raw.length === 0) return null;
   return Raw.startsWith('discord:') ? Raw.slice(8) : Raw;
 }
 
+/**
+ * Connecting IP with the port stripped, for the audit trail.
+ *
+ * The port is dropped because it is ephemeral per connection and carries
+ * no identifying value; `lastIndexOf` rather than `split` so an IPv6
+ * address keeps its own colons.
+ */
 function SafeEndpoint(Src: number): string | null {
   try {
     const Raw = GetPlayerEndpoint(String(Src));
@@ -220,6 +268,12 @@ function SafeEndpoint(Src: number): string | null {
   }
 }
 
+/**
+ * The player's Rockstar display name, for logs only.
+ *
+ * Player-controlled and non-unique, so it must never be used to identify
+ * or authorise anyone - that is what the license is for.
+ */
 function SafeName(Src: number): string | null {
   try {
     const Raw = GetPlayerName(String(Src));

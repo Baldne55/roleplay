@@ -61,8 +61,32 @@ export const AdvancementCooldownMs = 10 * 1000;
 /** Client health-poll tick interval. 250 ms is fast enough to catch one-shot lethal hits. */
 export const HealthPollIntervalMs = 250;
 
+/**
+ * Server-side critical-HP watchdog interval. `GetEntityHealth` is an
+ * apiset-server native, so the Backend samples the replicated ped HP
+ * directly and advances the injury progression even when the client's
+ * HealthCritical emit is lost or deliberately suppressed. One second is
+ * deliberately slower than the client poll - the emit stays the
+ * low-latency trigger; the watchdog is the authority backstop.
+ */
+export const HealthWatchdogIntervalMs = 1_000;
+
 /** `/helpup` proximity requirement. */
 export const HelpUpRangeMeters = 3;
+
+/**
+ * Consumable HP-regen tick cadence. The server drives the whole window
+ * (the client only applies each delta), so a relog mid-window simply
+ * stops the remaining ticks - no client-side timer to desync.
+ */
+export const RegenTickIntervalMs = 1_000;
+
+/**
+ * Client-side ceiling on a single regen tick's HP delta. Nothing in the
+ * catalog regenerates faster than 5 HP/s; anything above this arriving
+ * on the wire is a malformed or forged payload and is dropped.
+ */
+export const RegenMaxHpDelta = 25;
 
 /**
  * Red OOC badge rendered above the head when the player is non-Healthy.

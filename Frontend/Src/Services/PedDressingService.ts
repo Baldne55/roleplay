@@ -111,6 +111,11 @@ export class PedDressingService {
   private readonly Log = Logger.New('PedDressing');
   private CurrentGender: Gender | null = null;
 
+  /**
+   * The gender of the currently-loaded ped model, or null before one is
+   * loaded. Read by the creator to decide whether a gender switch needs a
+   * model reload.
+   */
   GetCurrentGender(): Gender | null {
     return this.CurrentGender;
   }

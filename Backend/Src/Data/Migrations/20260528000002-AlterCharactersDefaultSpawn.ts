@@ -1,5 +1,10 @@
 import type { QueryInterface, Sequelize } from 'sequelize';
 
+/**
+ * Umzug migration context. Carries the Sequelize instance whose
+ * QueryInterface performs the schema change - migrations never touch the
+ * application connection, which is not yet built when they run.
+ */
 interface Context {
   Sequelize: Sequelize;
 }
@@ -49,6 +54,12 @@ export async function Up({ Sequelize }: Context): Promise<void> {
   );
 }
 
+/**
+ * Make the position columns nullable again.
+ *
+ * Cleanly reversible - it only relaxes the constraint, so existing rows
+ * remain valid and no data is touched.
+ */
 export async function Down({ Sequelize }: Context): Promise<void> {
   await Sequelize.query('ALTER TABLE characters MODIFY position_x DECIMAL(10,3) NULL');
   await Sequelize.query('ALTER TABLE characters MODIFY position_y DECIMAL(10,3) NULL');

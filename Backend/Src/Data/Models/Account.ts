@@ -11,8 +11,15 @@ import {
 import type { CreationOptional, InferAttributes, InferCreationAttributes } from 'sequelize';
 import type { AccountSettings } from '@Shared/Constants/AccountSettings.js';
 
+/** Account lifecycle. `Pending` predates first successful sign-in; `Banned` blocks connection. */
 export type AccountStatus = 'Pending' | 'Active' | 'Banned';
+/**
+ * Staff tier, ascending. Compared through StaffLevelRanking.StaffMeets - a
+ * tier satisfies every gate at or below it. Distinct from admin duty,
+ * which is whether that authority is currently switched on.
+ */
 export type StaffLevel = 'None' | 'Helper' | 'Moderator' | 'Administrator' | 'Founder';
+/** Donator tier. Cosmetic today; reserved for future perk gating. */
 export type PremiumTier = 'None' | 'Bronze' | 'Silver' | 'Gold' | 'Platinum';
 
 /**

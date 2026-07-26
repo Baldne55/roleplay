@@ -1,4 +1,15 @@
 /**
+ * SUPERSEDED - THIS FILE IS NOT LOADED.
+ *
+ * ESLint 9 resolves flat config by default, so `eslint.config.mjs` in this
+ * same directory is what actually runs. Everything below is the legacy
+ * eslintrc form kept only for reference; editing it changes nothing.
+ * Rule changes belong in eslint.config.mjs.
+ *
+ * (Delete this file once nothing is pinned to the legacy resolver. It is
+ * tracked in git while the live flat config currently is not, which is
+ * exactly backwards.)
+ *
  * Strict TypeScript rules. The two non-negotiables:
  *   - no `any` anywhere (`no-explicit-any` + `no-unsafe-*`)
  *   - PascalCase identifiers with all-caps acronyms (Java-legacy style)
@@ -14,7 +25,11 @@ module.exports = {
   parserOptions: {
     ecmaVersion: 2022,
     sourceType: 'module',
-    project: ['./tsconfig.base.json', './*/tsconfig.json', './UCP/*/tsconfig.json'],
+    // One entry per workspace. The `./UCP/*/tsconfig.json` glob that used
+    // to sit here was dropped: no UCP workspace exists, and a glob that
+    // matches nothing is silently ignored, so it read as a supported
+    // surface that was never actually linted.
+    project: ['./tsconfig.base.json', './*/tsconfig.json'],
     tsconfigRootDir: __dirname,
   },
   plugins: ['@typescript-eslint'],
@@ -41,9 +56,10 @@ module.exports = {
     '@typescript-eslint/explicit-function-return-type': ['warn', { allowExpressions: true }],
     '@typescript-eslint/naming-convention': [
       'error',
-      // Default: PascalCase. ESLint can't enforce all-caps-acronyms automatically
-      // (no regex hook for that). Manual code-review catches it; convention is
-      // documented in Shared/Events/ and CLAUDE.md.
+      // Default: PascalCase. ESLint can't enforce all-caps-acronyms
+      // automatically (no regex hook for that), so `DiscordID` and
+      // `DiscordId` both pass here and only review catches the latter.
+      // The convention is written up in the Shared/Events/ file headers.
       { selector: 'default',          format: ['PascalCase'], leadingUnderscore: 'allow' },
       { selector: 'variable',         format: ['PascalCase'], leadingUnderscore: 'allow' },
       { selector: 'parameter',        format: ['PascalCase'], leadingUnderscore: 'allow' },

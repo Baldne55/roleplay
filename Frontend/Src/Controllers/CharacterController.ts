@@ -7,8 +7,10 @@ import type { NuiService } from '@/Services/NuiService.js';
 import type { CharacterCreatorService } from '@/Services/CharacterCreatorService.js';
 import type { SpawnService } from '@/Services/SpawnService.js';
 
+/* eslint-disable @typescript-eslint/naming-convention -- CitizenFX engine surface: names fixed by the runtime */
 declare function onNet<T extends (...Args: never[]) => void>(EventName: string, Callback: T): void;
 declare function emitNet(EventName: string, ...Args: unknown[]): void;
+/* eslint-enable @typescript-eslint/naming-convention */
 
 /**
  * Character lifecycle on the client side - create, list, select, spawn.
@@ -22,11 +24,11 @@ declare function emitNet(EventName: string, ...Args: unknown[]): void;
  *   onNet  CharacterSpawned        -> NUI CharacterSpawning + Spawn.SpawnIntoWorld
  *   onNet  CharacterSelectFailure  -> NUI CharacterSelectFailed
  *
- *   NUI    CharacterPreviewStart   -> CreatorService.StartPreview(gender)
- *   NUI    CharacterPreviewApply   -> CreatorService.ApplyAppearance(data)
- *   NUI    CharacterPreviewOutfit  -> CreatorService.ApplyOutfit(data)
- *   NUI    CharacterPreviewCamera  -> CreatorService.ApplyCamera(spec)
- *   NUI    CharacterPreviewStop    -> CreatorService.StopPreview()
+ *   NUI    CharacterPreviewStart   -> Creator.StartPreview(gender)
+ *   NUI    CharacterPreviewApply   -> Creator.ApplyAppearance(data)
+ *   NUI    CharacterPreviewOutfit  -> Creator.ApplyOutfit(data)
+ *   NUI    CharacterPreviewCamera  -> Creator.ApplyCamera(spec)
+ *   NUI    CharacterPreviewStop    -> Creator.StopPreview()
  *   NUI    CharacterCreate         -> emitNet CharacterCreate(payload)
  *   NUI    CharacterList           -> emitNet CharacterList
  *   NUI    CharacterSelect         -> emitNet CharacterSelect(payload)

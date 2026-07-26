@@ -15,10 +15,29 @@
  * inherit the new default until the user changes it.
  */
 
+/**
+ * SPA colour scheme. 'System' defers to the CEF browser's
+ * prefers-color-scheme rather than storing a resolved value, so a player
+ * who changes their OS theme mid-session is followed without a re-save.
+ */
 export type ThemeMode = 'Light' | 'Dark' | 'System';
 
+/** Runtime list of ThemeMode, for validation and for the settings picker. */
 export const ThemeModes: readonly ThemeMode[] = ['Light', 'Dark', 'System'];
 
+/**
+ * Per-account preferences, persisted as a single JSON column.
+ *
+ * Every field is optional on purpose: a stored row only carries the keys
+ * the player has actually changed, and everything else resolves from
+ * DefaultAccountSettings at read time. That is what lets a new setting
+ * ship without a migration - existing rows simply have no key for it and
+ * inherit the default.
+ *
+ * The corollary is that consumers must not read this type directly when
+ * they need a value; go through ResolveAccountSettings, or an unset key
+ * reads as undefined rather than as its default.
+ */
 export interface AccountSettings {
   /** Light / Dark / System (follows OS prefers-color-scheme). */
   ThemeMode?: ThemeMode;

@@ -6,9 +6,11 @@ import {
 } from '@/Services/AccountSettingsService.js';
 import type { PlayerStateService } from '@/Services/PlayerStateService.js';
 
+/* eslint-disable @typescript-eslint/naming-convention -- CitizenFX engine surface: names fixed by the runtime */
 declare const source: number;
 declare function onNet<T extends (...Args: never[]) => void>(EventName: string, Callback: T): void;
 declare function emitNet(EventName: string, Target: number, ...Args: unknown[]): void;
+/* eslint-enable @typescript-eslint/naming-convention */
 
 /**
  * Server-side settings bridge.
@@ -32,13 +34,22 @@ export class SettingsController {
       NetEvents.SettingsUpdate,
       (Payload: NetEventPayloads[typeof NetEvents.SettingsUpdate]): void => {
         const Src = source;
-        void this.HandleUpdate(Src, Payload);
+        void this.HandleUpdate(Src, Payload).catch((Err: unknown) => {
+          this.Log.Error(`HandleUpdate failed for source=${Src}`, { Err: String(Err) });
+        });
       },
     );
 
     this.Log.Debug('Handlers registered (SettingsUpdate)');
   }
 
+  /**
+   * Apply a settings change from the SPA.
+   *
+   * Validated server-side and merged over existing values rather than
+   * replacing them, so a client sending a partial object cannot blank the
+   * settings it did not mention.
+   */
   private async HandleUpdate(
     Src: number,
     Payload: NetEventPayloads[typeof NetEvents.SettingsUpdate],
